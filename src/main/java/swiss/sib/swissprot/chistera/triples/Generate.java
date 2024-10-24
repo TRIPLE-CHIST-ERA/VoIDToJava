@@ -39,14 +39,14 @@ import com.squareup.javapoet.TypeSpec.Builder;
 public class Generate {
 	private static final String PREFIXES = """
 			PREFIX dcterms: <http://purl.org/dc/terms/>
-			PREFIX  foaf: <http://xmlns.com/foaf/0.1/>
-			PREFIX  owl: <http://www.w3.org/2002/07/owl#>
-			PREFIX  pav: <http://purl.org/pav/>
-			PREFIX  rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-			PREFIX  rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-			PREFIX  void: <http://rdfs.org/ns/void#>
-			PREFIX  void_ext: <http://ldf.fi/void-ext#>
-			PREFIX  sd:<http://www.w3.org/ns/sparql-service-description#>
+			PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+			PREFIX owl: <http://www.w3.org/2002/07/owl#>
+			PREFIX pav: <http://purl.org/pav/>
+			PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+			PREFIX void: <http://rdfs.org/ns/void#>
+			PREFIX void_ext: <http://ldf.fi/void-ext#>
+			PREFIX sd:<http://www.w3.org/ns/sparql-service-description#>
 			""";
 
 	private static final String FIND_ALL_NAMED_GRAPHS = PREFIXES + """
@@ -120,14 +120,14 @@ public class Generate {
 
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT ?classPartion ?class ?predicate
-				      WHERE {
-				              ?graph sd:graph/void:classPartition ?classPartion .
-				              ?classPartion void:class ?class .
-				              ?class void:predicatePartition ?predicatePartition .
-				              ?predicatePartition void:predicate ?predicate .
-				              ?predicatePartition void:classPartition ?class2 .
-				              ?class2 void:class ?classType2 .
-				          }
+				WHERE {
+					?graph sd:graph/void:classPartition ?classPartion .
+					?classPartion void:class ?class .
+					?class void:predicatePartition ?predicatePartition .
+					?predicatePartition void:predicate ?predicate .
+					?predicatePartition void:classPartition ?class2 .
+					?class2 void:class ?classType2 .
+		        }
 				""");
 		tq.setBinding("graph", graphName);
 		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
@@ -154,12 +154,12 @@ public class Generate {
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
 		Map<IRI, Builder> classBuilders = new HashMap<>();
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartion ?class
-				      WHERE {
-				              ?graph sd:graph/void:classPartition ?classPartion .
-				              ?classPartion void:class ?class .
-				          }
-				""");
+					SELECT ?classPartion ?class
+					WHERE {
+						?graph sd:graph/void:classPartition ?classPartion .
+						?classPartion void:class ?class .
+					}
+					""");
 		tq.setBinding("graph", graphName);
 		try (TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
