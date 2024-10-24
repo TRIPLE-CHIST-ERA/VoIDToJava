@@ -20,8 +20,8 @@ public class GenerateTest {
 	
 	@Test
 	public void testUniProt() throws IOException {
-		Generate generate = new Generate();
-		generate.convert(Generate.class.getResourceAsStream("/uniprot.ttl"), tempDir);
+		GenerateJavaFromVoID generate = new GenerateJavaFromVoID();
+		generate.convert(GenerateJavaFromVoID.class.getResourceAsStream("/uniprot.ttl"), tempDir);
 		try(Stream<Path> list = Files.list(tempDir.toPath())){
 			assertTrue(list.findAny().isPresent());
 		}
@@ -29,7 +29,7 @@ public class GenerateTest {
 
 	@Test
 	public void testPackageNames() {
-		String s=new Generate().getPackageName(URI.create("https://sparql.uniprot.org/uniprot")).toString();
+		String s=new GenerateJavaFromVoID().getPackageName(URI.create("https://sparql.uniprot.org/uniprot")).toString();
 		assertEquals("org.uniprot.sparql.uniprot", s);
 		
 	}

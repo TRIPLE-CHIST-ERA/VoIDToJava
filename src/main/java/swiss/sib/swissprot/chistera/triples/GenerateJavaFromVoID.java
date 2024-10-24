@@ -36,7 +36,7 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeSpec.Builder;
 
-public class Generate {
+public class GenerateJavaFromVoID {
 	private static final String PREFIXES = """
 			PREFIX dcterms: <http://purl.org/dc/terms/>
 			PREFIX foaf: <http://xmlns.com/foaf/0.1/>
@@ -62,7 +62,7 @@ public class Generate {
 		String input = args[0];
 		String output = args[1];
 		try (InputStream inputVoid = Files.newInputStream(Path.of(input))) {
-			new Generate().convert(inputVoid, new File(output));
+			new GenerateJavaFromVoID().convert(inputVoid, new File(output));
 		} catch (RDFParseException | RepositoryException | IOException e) {
 			e.printStackTrace();
 		}
