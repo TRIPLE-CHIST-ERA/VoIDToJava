@@ -127,7 +127,7 @@
                 </transformer>
               </transformers>
               <artifactSet/>
-              <minimizeJar>true</minimizeJar>
+              <!--<minimizeJar>true</minimizeJar>-->
             </configuration>
           </execution>
         </executions>

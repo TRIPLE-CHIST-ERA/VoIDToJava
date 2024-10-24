@@ -1,0 +1,165 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix void: <http://rdfs.org/ns/void#> .
+@prefix : <http://www.w3.org/ns/sparql-service-description#> .
+@prefix void_ext: <http://ldf.fi/void-ext#> .
+@prefix formats: <http://www.w3.org/ns/formats/> .
+@prefix pav: <http://purl.org/pav/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<https://example.org/void-generator-tutorial/sparql> a :Service;
+  :defaultDataset <https://example.org/void-generator-tutorial/sparql#sparql-default-dataset>;
+  :endpoint <https://example.org/void-generator-tutorial/sparql>;
+  :resultFormat formats:SPARQL_Results_CSV, formats:SPARQL_Results_JSON, formats:N-Triples,
+    formats:RDF_XML, formats:SPARQL_Results_TSV, formats:Turtle, formats:SPARQL_Results_XML;
+  :supportedLanguage :SPARQL11Query;
+  :feature :UnionDefaultGraph, :BasicFederatedQuery;
+  :availableGraphs <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> .
+
+<https://example.org/void-generator-tutorial/sparql#sparql-default-dataset> a :Dataset;
+  :defaultGraph <https://example.org/.well-known/void#sparql-default-graph>;
+  :namedGraph <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> .
+
+<https://example.org/.well-known/void#sparql-default-graph> a :Graph;
+  void:triples "18"^^xsd:long;
+  void:distinctObjects "9"^^xsd:long;
+  void_ext:distinctLiterals "3"^^xsd:long;
+  void_ext:distinctIRIReferenceObjects "6"^^xsd:long;
+  void:distinctSubjects "7"^^xsd:long;
+  void_ext:distinctIRIReferenceSubjects "7"^^xsd:long .
+
+<file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> a :NamedGraph;
+  :name <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig>;
+  :graph <https://example.org/.well-known/void#_graph_tutorial.trig!ffc65c426422a246a4bb6ed78176605a> .
+
+<https://example.org/.well-known/void#_graph_tutorial.trig!ffc65c426422a246a4bb6ed78176605a>
+  a :Graph;
+  void:triples "18"^^xsd:long;
+  void:classes "4"^^xsd:long;
+  void:classPartition <https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Apple>,
+    <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>,
+    <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>,
+    <https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Pear>;
+  void:propertyPartition <https://example.org/.well-known/void#tutorial.trig!c74e2b735dd8dc85ad0ee3510c33925f!type>,
+    <https://example.org/.well-known/void#tutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>,
+    <https://example.org/.well-known/void#tutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_on>,
+    <https://example.org/.well-known/void#tutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on>;
+  void:distinctObjects "3"^^xsd:long;
+  void_ext:distinctLiterals "3"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Apple>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#Apple>;
+  void:entities "3"^^xsd:long;
+  void:propertyPartition <https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Appletutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>,
+    <https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Appletutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on> .
+
+<https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Appletutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#color>;
+  void_ext:datatypePartition <https://example.org/.well-known/void#tutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!colortutorial.trig!4e598fd1b2c9ef9bd360334e0ef7610a!string>;
+  void:triples "3"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!colortutorial.trig!4e598fd1b2c9ef9bd360334e0ef7610a!string>
+  a void:Dataset;
+  void_ext:datatype xsd:string .
+
+<https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Appletutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#grows_on>;
+  void:classPartition <https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Appletutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:triples "2"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Appletutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#FruitTree>;
+  void:triples "2"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#Fruit>;
+  void:entities "4"^^xsd:long;
+  void:propertyPartition <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>,
+    <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_on>,
+    <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on> .
+
+<https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#color>;
+  void_ext:datatypePartition <https://example.org/.well-known/void#tutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!colortutorial.trig!4e598fd1b2c9ef9bd360334e0ef7610a!string>;
+  void:triples "4"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_on>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#growns_on>;
+  void:classPartition <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:triples "1"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#FruitTree>;
+  void:triples "1"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#grows_on>;
+  void:classPartition <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:triples "2"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#FruitTree>;
+  void:triples "2"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#FruitTree>;
+  void:entities "3"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Pear>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#Pear>;
+  void:entities "1"^^xsd:long;
+  void:propertyPartition <https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Peartutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>,
+    <https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Peartutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_on> .
+
+<https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Peartutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#color>;
+  void_ext:datatypePartition <https://example.org/.well-known/void#tutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!colortutorial.trig!4e598fd1b2c9ef9bd360334e0ef7610a!string>;
+  void:triples "1"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Peartutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_on>
+  a void:Dataset;
+  void:property <https://example.org/void-generator/test/schema#growns_on>;
+  void:classPartition <https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Peartutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:triples "1"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Peartutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_ontutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>
+  a void:Dataset;
+  void:class <https://example.org/void-generator/test/schema#FruitTree>;
+  void:triples "1"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!c74e2b735dd8dc85ad0ee3510c33925f!type>
+  void:property rdf:type;
+  void:triples "11"^^xsd:long;
+  void:distinctSubjects "7"^^xsd:long;
+  void:distinctObjects "4"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!0df7bcd6e74cc08385b34a9b72ff69a1!color>
+  void:property <https://example.org/void-generator/test/schema#color>;
+  void:triples "4"^^xsd:long;
+  void:distinctSubjects "4"^^xsd:long;
+  void:distinctObjects "3"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!592e9955a2ce92d566d2fc4bdf89896b!growns_on>
+  void:property <https://example.org/void-generator/test/schema#growns_on>;
+  void:triples "1"^^xsd:long;
+  void:distinctSubjects "1"^^xsd:long;
+  void:distinctObjects "1"^^xsd:long .
+
+<https://example.org/.well-known/void#tutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on>
+  void:property <https://example.org/void-generator/test/schema#grows_on>;
+  void:triples "2"^^xsd:long;
+  void:distinctSubjects "2"^^xsd:long;
+  void:distinctObjects "1"^^xsd:long .

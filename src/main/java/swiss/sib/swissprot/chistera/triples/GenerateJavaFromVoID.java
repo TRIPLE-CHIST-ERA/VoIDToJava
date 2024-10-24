@@ -19,6 +19,8 @@ import javax.lang.model.element.Modifier;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.model.vocabulary.XSD.Datatype;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeSpec.Builder;
 
@@ -56,7 +59,7 @@ public class GenerateJavaFromVoID {
 			               sd:namedGraph ?namedGraph .
 			}
 			""";
-	Map<String, Namespace> ns= new HashMap<>();
+	Map<String, Namespace> ns = new HashMap<>();
 
 	public static void main(String[] args) {
 		String input = args[0];
@@ -76,11 +79,11 @@ public class GenerateJavaFromVoID {
 			conn.begin();
 			conn.add(inputVoid, RDFFormat.TURTLE);
 			conn.commit();
-			
+
 		}
 		try (SailRepositoryConnection conn = ms.getConnection()) {
 			RepositoryResult<Namespace> namespaces = conn.getNamespaces();
-			
+
 			try (Stream<Namespace> s = namespaces.stream()) {
 				s.forEach((n) -> ns.put(n.getName(), n));
 			}
@@ -105,7 +108,7 @@ public class GenerateJavaFromVoID {
 							packageName, conn, resource);
 					buildMethodsOnTypesInAGraph(outputDirectory, name, packageName, conn, resource,
 							buildTypeClasssesForAGraph);
-					for (Builder b:buildTypeClasssesForAGraph.values()) {
+					for (Builder b : buildTypeClasssesForAGraph.values()) {
 						JavaFile javaFile = JavaFile.builder(packageName, b.build()).build();
 						javaFile.writeTo(outputDirectory);
 					}
@@ -118,48 +121,106 @@ public class GenerateJavaFromVoID {
 	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName, Map<IRI, Builder> classBuilders) {
 
+		buildMethodsReturningObjects(conn, graphName, classBuilders);
+		buildMethodsReturningLiterals(conn, graphName, classBuilders);
+	}
+
+	public void buildMethodsReturningObjects(SailRepositoryConnection conn, IRI graphName,
+			Map<IRI, Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartion ?class ?predicate
+				SELECT ?classPartition ?classType ?predicate ?classType2 ?class2Partition
 				WHERE {
-					?graph sd:graph/void:classPartition ?classPartion .
-					?classPartion void:class ?class .
-					?class void:predicatePartition ?predicatePartition .
-					?predicatePartition void:predicate ?predicate .
-					?predicatePartition void:classPartition ?class2 .
-					?class2 void:class ?classType2 .
-		        }
+				  ?graph sd:graph/void:classPartition ?classPartition .
+				  ?classPartition void:class ?classType .
+				  ?classPartition void:propertyPartition ?predicatePartition .
+				  ?predicatePartition void:property ?predicate .
+				  ?predicatePartition void:classPartition ?class2Partition .
+				  ?class2Partition void:class ?classType2 .
+				}
 				""");
 		tq.setBinding("graph", graphName);
 		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
-			tq.setBinding("classPartion", en.getKey());
+			tq.setBinding("classPartition", en.getKey());
 			try (TupleQueryResult tqr = tq.evaluate()) {
 				while (tqr.hasNext()) {
 					BindingSet binding = tqr.next();
 					Binding predicate = binding.getBinding("predicate");
-					Binding otherClass = binding.getBinding("class2");
-					Builder cb = classBuilders.get(otherClass.getValue());
+					Binding classToAddTo = binding.getBinding("classPartition");
+					Binding otherClass = binding.getBinding("class2Partition");
 					
-					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(predicate.getValue().stringValue()));
+					if (otherClass == null) {
+						
+					}
+					Builder cb = classBuilders.get(classToAddTo.getValue());
+					assert cb != null : "ClassBuilder not found for " + otherClass.getValue().stringValue();
+					String predicateString = predicate.getValue().stringValue();
+					String methodName = fixJavaKeywords(
+							predicateString.substring(predicateString.lastIndexOf('/') + 1));
+					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
-					var v = classBuilders.get(otherClass.getValue());
-//					methodBuilder.returns(v.typeSpecs.get(0).);
+					Builder v = classBuilders.get(classToAddTo.getValue());
+
+					methodBuilder.returns(Void.class);
 //					type
 					cb.addMethod(methodBuilder.build());
 				}
 			}
 		}
 	}
+	
+	public void buildMethodsReturningLiterals(SailRepositoryConnection conn, IRI graphName,
+			Map<IRI, Builder> classBuilders) {
+		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
+				SELECT *
+				WHERE {
+				  ?graph sd:graph/void:classPartition ?classPartition .
+				  ?classPartition void:class ?classType .
+				  ?classPartition void:propertyPartition ?predicatePartition .
+				  ?predicatePartition void:property ?predicate .
+				  ?predicatePartition void_ext:datatypePartition ?datatypePartition .
+				  ?datatypePartition void_ext:datatype ?datatype .
+				}
+				""");
+		tq.setBinding("graph", graphName);
+		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
+			tq.setBinding("classPartition", en.getKey());
+			try (TupleQueryResult tqr = tq.evaluate()) {
+				while (tqr.hasNext()) {
+					BindingSet binding = tqr.next();
+					Binding predicate = binding.getBinding("predicate");
+					Binding classToAddTo = binding.getBinding("classPartition");
+					IRI datatypeB = (IRI) binding.getBinding("datatype").getValue();
+					
+					
+					Builder cb = classBuilders.get(classToAddTo.getValue());
+					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
+					String predicateString = predicate.getValue().stringValue();
+					String methodName = fixJavaKeywords(
+							predicateString.substring(predicateString.lastIndexOf('/') + 1));
+					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
+					methodBuilder.addModifiers(Modifier.PUBLIC);
+					Builder v = classBuilders.get(classToAddTo.getValue());
+
+					methodBuilder.returns(literalToClassMap.get(datatypeB));
+//					type
+					cb.addMethod(methodBuilder.build());
+				}
+			}
+		}
+	}
+	
+	private Map<IRI, Class<?>> literalToClassMap = Map.of(XSD.STRING, String.class, XSD.INT, Integer.class, XSD.INTEGER, Integer.class);
 
 	private Map<IRI, Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
 		Map<IRI, Builder> classBuilders = new HashMap<>();
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-					SELECT ?classPartion ?class
-					WHERE {
-						?graph sd:graph/void:classPartition ?classPartion .
-						?classPartion void:class ?class .
-					}
-					""");
+				SELECT ?classPartition ?class
+				WHERE {
+					?graph sd:graph/void:classPartition ?classPartition .
+					?classPartition void:class ?class .
+				}
+				""");
 		tq.setBinding("graph", graphName);
 		try (TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
@@ -173,7 +234,9 @@ public class GenerateJavaFromVoID {
 				className = fixJavaKeywords(extract(className));
 
 				Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
-				classBuilders.put((IRI) binding.getBinding("classPartion").getValue(), classBuilder);
+				IRI classIri = (IRI) binding.getBinding("classPartition").getValue();
+				classBuilders.put(classIri, classBuilder);
+				System.err.println("class: " + className + " created " + classIri);
 //				var jc = classBuilder.build();
 //				
 //				JavaFile javaFile = JavaFile.builder(packageName, jc).build();
@@ -193,7 +256,8 @@ public class GenerateJavaFromVoID {
 				Namespace ns = any.get();
 				return ns.getPrefix() + path.substring(ns.getName().length());
 			} else {
-				//If there is no namespace, return the last part to have higher chance of having a good class name.
+				// If there is no namespace, return the last part to have higher chance of
+				// having a good class name.
 				return path.substring(path.lastIndexOf('/') + 1);
 			}
 		}
@@ -207,12 +271,14 @@ public class GenerateJavaFromVoID {
 	}
 
 	StringBuilder getPackageName(URI uri) {
-		List<String> hostPartsAsList = Arrays.asList(uri.getHost().split("\\."));
 		StringBuilder packageName = new StringBuilder();
-		for (int i = hostPartsAsList.size() - 1; i >= 0; i--) {
-			packageName.append(fixJavaKeywords(hostPartsAsList.get(i)));
-			if (i > 0) {
-				packageName.append('.');
+		if (uri.getHost() != null) {
+			List<String> hostPartsAsList = Arrays.asList(uri.getHost().split("\\."));
+			for (int i = hostPartsAsList.size() - 1; i >= 0; i--) {
+				packageName.append(fixJavaKeywords(hostPartsAsList.get(i)));
+				if (i > 0) {
+					packageName.append('.');
+				}
 			}
 		}
 		List<String> partsDirsAsList = Arrays.asList(uri.getPath().split("/"));
