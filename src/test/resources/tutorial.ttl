@@ -75,6 +75,12 @@
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "2"^^xsd:long .
 
+_:dba54979e81c48dc8a2e16a16749633a2 a void:Linkset;
+  void:linkPredicate <https://example.org/void-generator/test/schema#grows_on>;
+  void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Apple>;
+  void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:subset <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> .
+
 <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>
   a void:Dataset;
   void:class <https://example.org/void-generator/test/schema#Fruit>;
@@ -100,6 +106,12 @@
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "1"^^xsd:long .
 
+_:dba54979e81c48dc8a2e16a16749633a3 a void:Linkset;
+  void:linkPredicate <https://example.org/void-generator/test/schema#growns_on>;
+  void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>;
+  void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:subset <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> .
+
 <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruittutorial.trig!9b56f03bd983e200da0e3a943d44d8a1!grows_on>
   a void:Dataset;
   void:property <https://example.org/void-generator/test/schema#grows_on>;
@@ -110,6 +122,12 @@
   a void:Dataset;
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "2"^^xsd:long .
+
+_:dba54979e81c48dc8a2e16a16749633a4 a void:Linkset;
+  void:linkPredicate <https://example.org/void-generator/test/schema#grows_on>;
+  void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>;
+  void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:subset <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> .
 
 <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>
   a void:Dataset;
@@ -139,6 +157,12 @@
   a void:Dataset;
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "1"^^xsd:long .
+
+_:dba54979e81c48dc8a2e16a16749633a5 a void:Linkset;
+  void:linkPredicate <https://example.org/void-generator/test/schema#growns_on>;
+  void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Pear>;
+  void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
+  void:subset <file:/home/jbollema/git/void-generator/src/test/resources/tutorial.trig> .
 
 <https://example.org/.well-known/void#tutorial.trig!c74e2b735dd8dc85ad0ee3510c33925f!type>
   void:property rdf:type;

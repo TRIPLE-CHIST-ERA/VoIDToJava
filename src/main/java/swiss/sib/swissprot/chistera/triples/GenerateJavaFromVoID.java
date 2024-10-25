@@ -26,11 +26,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype.RDF;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -39,10 +41,12 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-import com.squareup.javapoet.JavaFile;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeSpec;
-import com.squareup.javapoet.TypeSpec.Builder;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 
 public class GenerateJavaFromVoID {
 	private static final String PREFIXES = """
@@ -109,11 +113,11 @@ public class GenerateJavaFromVoID {
 					String name = fixJavaKeywords(path.substring(path.lastIndexOf('/') + 1)) + "Graph";
 					String packageName = getPackageName(uri).toString();
 					buildClassForAGraph(outputDirectory, name, packageName);
-					Map<IRI, Builder> buildTypeClasssesForAGraph = buildTypeClasssesForAGraph(outputDirectory, name,
+					Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph = buildTypeClasssesForAGraph(outputDirectory, name,
 							packageName, conn, resource);
 					buildMethodsOnTypesInAGraph(outputDirectory, name, packageName, conn, resource,
 							buildTypeClasssesForAGraph);
-					for (Builder b : buildTypeClasssesForAGraph.values()) {
+					for (TypeSpec.Builder b : buildTypeClasssesForAGraph.values()) {
 						JavaFile javaFile = JavaFile.builder(packageName, b.build()).build();
 						javaFile.writeTo(outputDirectory);
 					}
@@ -124,57 +128,86 @@ public class GenerateJavaFromVoID {
 	}
 
 	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
-			SailRepositoryConnection conn, IRI graphName, Map<IRI, Builder> classBuilders) {
+			SailRepositoryConnection conn, IRI graphName, Map<IRI, TypeSpec.Builder> classBuilders) {
 		buildIdField(conn, graphName, classBuilders);
 		buildMethodsReturningObjects(conn, graphName, classBuilders);
 		buildMethodsReturningLiterals(conn, graphName, classBuilders);
 	}
 
-	private void buildIdField(SailRepositoryConnection conn, IRI graphName, Map<IRI, Builder> classBuilders) {
-		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
-			Builder cb = en.getValue();
+	private void buildIdField(SailRepositoryConnection conn, IRI graphName, Map<IRI, TypeSpec.Builder> classBuilders) {
+		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
+			TypeSpec.Builder cb = en.getValue();
 			cb.addField(IRI.class, "id", Modifier.PRIVATE, Modifier.FINAL);
+			cb.addField(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL);
 			cb.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
-					.addParameter(IRI.class, "id", Modifier.FINAL).addStatement("this.id = id").build());
+					.addParameter(IRI.class, "id", Modifier.FINAL).addStatement("this.id = id")
+					.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn").build());
 		}
 	}
 
 	public void buildMethodsReturningObjects(SailRepositoryConnection conn, IRI graphName,
-			Map<IRI, Builder> classBuilders) {
+			Map<IRI, TypeSpec.Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartition ?classType ?predicate ?classType2 ?class2Partition
+				SELECT ?classPartition ?classType ?predicate ?class2Partition
 				WHERE {
 				  ?graph sd:graph/void:classPartition ?classPartition .
 				  ?classPartition void:class ?classType .
 				  ?classPartition void:propertyPartition ?predicatePartition .
 				  ?predicatePartition void:property ?predicate .
-				  ?predicatePartition void:classPartition ?class2Partition .
-				  ?class2Partition void:class ?classType2 .
+				  [] a void:Linkset ;
+				  	 void:objectsTarget ?class2Partition ;
+				  	 void:linkPredicate ?predicate ;
+				  	 void:subjectsTarget ?classPartition ;
+				  	 void:subset ?graph .
 				}
 				""");
 		tq.setBinding("graph", graphName);
-		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
+		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			tq.setBinding("classPartition", en.getKey());
+			TypeSpec.Builder cb = classBuilders.get(en.getKey());
+		
 			try (TupleQueryResult tqr = tq.evaluate()) {
 				while (tqr.hasNext()) {
 					BindingSet binding = tqr.next();
 					Binding predicate = binding.getBinding("predicate");
-					Binding classToAddTo = binding.getBinding("classPartition");
 					Binding otherClass = binding.getBinding("class2Partition");
 
 					if (otherClass == null) {
 
 					}
-					Builder cb = classBuilders.get(classToAddTo.getValue());
 					assert cb != null : "ClassBuilder not found for " + otherClass.getValue().stringValue();
 					String predicateString = predicate.getValue().stringValue();
 					String methodName = fixJavaKeywords(
 							predicateString.substring(predicateString.lastIndexOf('/') + 1));
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
-					Builder v = classBuilders.get(classToAddTo.getValue());
-
-					methodBuilder.returns(Void.class);
+					TypeSpec.Builder v = classBuilders.get(otherClass.getValue());
+					
+					ClassName returnType = ClassName.get("", v.build().name());
+					methodBuilder.returns(returnType);
+					CodeBlock.Builder cbb = CodeBlock.builder();
+					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+					
+					cb.addField(fieldBuilder);
+					
+					cbb.addStatement("String query = $S", "SELECT ?object WHERE { GRAPH ?graph { ?id ?predicate ?object }}");
+					cbb.addStatement("$T tq = conn.prepareTupleQuery(query)", TupleQuery.class);
+					cbb.addStatement("tq.setBinding($S, graph)", "graph");
+					cbb.addStatement("tq.setBinding($S, id)", "id");
+					cbb.addStatement("tq.setBinding(\"predicate\", $L)", fieldBuilder.name());
+					cbb.beginControlFlow("try ($T tqr = tq.evaluate()) ", TupleQueryResult.class);
+					
+					cbb.beginControlFlow("while (tqr.hasNext())");
+					cbb.addStatement("$T bs = tqr.next()", BindingSet.class);
+					cbb.addStatement("$T object = bs.getBinding(\"object\")", Binding.class);
+					cbb.beginControlFlow("if (object != null)");
+					cbb.addStatement("return new $T(($T) object)", returnType, IRI.class);
+					cbb.endControlFlow();
+					cbb.endControlFlow();
+					cbb.endControlFlow();
+					cbb.addStatement("return null");
+					methodBuilder.addCode(cbb.build());
 //					type
 					cb.addMethod(methodBuilder.build());
 				}
@@ -183,7 +216,7 @@ public class GenerateJavaFromVoID {
 	}
 
 	public void buildMethodsReturningLiterals(SailRepositoryConnection conn, IRI graphName,
-			Map<IRI, Builder> classBuilders) {
+			Map<IRI, TypeSpec.Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT *
 				WHERE {
@@ -196,7 +229,7 @@ public class GenerateJavaFromVoID {
 				}
 				""");
 		tq.setBinding("graph", graphName);
-		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
+		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			tq.setBinding("classPartition", en.getKey());
 			try (TupleQueryResult tqr = tq.evaluate()) {
 				while (tqr.hasNext()) {
@@ -204,22 +237,90 @@ public class GenerateJavaFromVoID {
 					Binding predicate = binding.getBinding("predicate");
 					Binding classToAddTo = binding.getBinding("classPartition");
 					IRI datatypeB = (IRI) binding.getBinding("datatype").getValue();
+					TypeSpec.Builder cb = classBuilders.get(classToAddTo.getValue());
 
-					Builder cb = classBuilders.get(classToAddTo.getValue());
+					
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					String predicateString = predicate.getValue().stringValue();
 					String methodName = fixJavaKeywords(
 							predicateString.substring(predicateString.lastIndexOf('/') + 1));
+					
+					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+					cb.addField(fieldBuilder);
+					
+					
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
-					Builder v = classBuilders.get(classToAddTo.getValue());
+					CodeBlock.Builder cbb = CodeBlock.builder();
+					Class<?> returnType = returnTheRightKindOfData(datatypeB, cbb);
+					cbb.addStatement("String query = $S", "SELECT ?object WHERE { GRAPH ?graph { ?id ?predicate ?object }}");
+					cbb.addStatement("$T tq = conn.prepareTupleQuery(query)", TupleQuery.class);
+					cbb.addStatement("tq.setBinding($S, graph)", "graph");
+					cbb.addStatement("tq.setBinding($S, id)", "id");
+					cbb.addStatement("tq.setBinding(\"predicate\", $L)", fieldBuilder.name());
+					cbb.beginControlFlow("try ($T tqr = tq.evaluate()) ", TupleQueryResult.class);
+					
+					cbb.beginControlFlow("while (tqr.hasNext())");
+					cbb.addStatement("$T bs = tqr.next()", BindingSet.class);
+					cbb.addStatement("$T object = bs.getBinding(\"object\")", Binding.class);
+					cbb.beginControlFlow("if (object != null)");
+					cbb.endControlFlow();
+					cbb.endControlFlow();
+					cbb.endControlFlow();
+					cbb.addStatement("return null");
+					methodBuilder.addCode(cbb.build());
 
-					methodBuilder.returns(literalToClassMap.get(datatypeB));
+					methodBuilder.returns(returnType);
 //					type
 					cb.addMethod(methodBuilder.build());
 				}
 			}
 		}
+	}
+
+	public Class<?> returnTheRightKindOfData(IRI datatypeB, CodeBlock.Builder cbb) {
+		Class<?> returnType = literalToClassMap.get(datatypeB);
+		if (returnType == String.class) {
+			cbb.addStatement("return object.getValue().stringValue()");
+		} else if (returnType == Integer.class){
+			cbb.addStatement("return object.getValue().integerValue()");
+		} else if (returnType == Boolean.class) {
+			cbb.addStatement("return object.getValue().booleanValue()");
+		} else if (returnType == Double.class) {
+			cbb.addStatement("return object.getValue().doubleValue()");
+		} else if (returnType == Float.class) {
+			cbb.addStatement("return object.getValue().floatValue()");
+		} else if (returnType == Short.class) {
+			cbb.addStatement("return object.getValue().shortValue()");
+		} else if (returnType == Long.class) {
+			cbb.addStatement("return object.getValue().longValue()");
+		} else if (returnType == Byte.class) {
+			cbb.addStatement("return object.getValue().byteValue()");
+		} else if (returnType == URI.class) {
+			cbb.addStatement("return object.getValue().uriValue()");
+		} else if (returnType == LocalDate.class) {
+			cbb.addStatement(
+					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate()");
+		} else if (returnType == LocalDateTime.class) {
+			cbb.addStatement(
+					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDateTime()");
+		} else if (returnType == Instant.class) {
+			cbb.addStatement(
+					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant()");
+		} else if (returnType == Duration.class) {
+			cbb.addStatement(
+					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()");
+		} else if (returnType == Year.class) {
+			cbb.addStatement(
+					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()");
+		} else if (returnType == YearMonth.class) {
+			cbb.addStatement(
+					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()");
+		} else {
+			cbb.addStatement("return object.getValue()");
+		}
+		return returnType;
 	}
 
 	// TODO needs to be expanded to all known literals. And lang string needs to be considered.
@@ -238,9 +339,9 @@ public class GenerateJavaFromVoID {
 			Map.entry(XSD.SHORT, Short.class),
 			Map.entry(RDF.LANGSTRING.getIri(), String.class));
 
-	private Map<IRI, Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
+	private Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
-		Map<IRI, Builder> classBuilders = new HashMap<>();
+		Map<IRI, TypeSpec.Builder> classBuilders = new HashMap<>();
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT ?classPartition ?class
 				WHERE {
@@ -251,23 +352,17 @@ public class GenerateJavaFromVoID {
 		tq.setBinding("graph", graphName);
 		try (TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
-				BindingSet binding = tqr.next();
+				BindingSet binding = tqr.next();	
 				Binding cIri = binding.getBinding("class");
 				String className = cIri.getValue().stringValue();
-//				String className = fixJavaKeywords(path.substring(path.lastIndexOf('/') + 1));
-				//
-				// String classPackageName = getPackageName(URI.create(path)).toString();
 
 				className = fixJavaKeywords(extract(className));
 
-				Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
+				TypeSpec.Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
+				FieldSpec graphfield = FieldSpec.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC).initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, graphName.stringValue()).build();
+				classBuilder.addField(graphfield);
 				IRI classIri = (IRI) binding.getBinding("classPartition").getValue();
 				classBuilders.put(classIri, classBuilder);
-				System.err.println("class: " + className + " created " + classIri);
-//				var jc = classBuilder.build();
-//				
-//				JavaFile javaFile = JavaFile.builder(packageName, jc).build();
-//				javaFile.writeTo(outputDirectory);
 			}
 		}
 		return classBuilders;
