@@ -6,6 +6,12 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.Year;
+import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -19,8 +25,8 @@ import javax.lang.model.element.Modifier;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.model.vocabulary.XSD.Datatype;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -35,7 +41,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.TypeSpec.Builder;
 
@@ -120,9 +125,18 @@ public class GenerateJavaFromVoID {
 
 	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName, Map<IRI, Builder> classBuilders) {
-
+		buildIdField(conn, graphName, classBuilders);
 		buildMethodsReturningObjects(conn, graphName, classBuilders);
 		buildMethodsReturningLiterals(conn, graphName, classBuilders);
+	}
+
+	private void buildIdField(SailRepositoryConnection conn, IRI graphName, Map<IRI, Builder> classBuilders) {
+		for (Entry<IRI, Builder> en : classBuilders.entrySet()) {
+			Builder cb = en.getValue();
+			cb.addField(IRI.class, "id", Modifier.PRIVATE, Modifier.FINAL);
+			cb.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
+					.addParameter(IRI.class, "id", Modifier.FINAL).addStatement("this.id = id").build());
+		}
 	}
 
 	public void buildMethodsReturningObjects(SailRepositoryConnection conn, IRI graphName,
@@ -147,9 +161,9 @@ public class GenerateJavaFromVoID {
 					Binding predicate = binding.getBinding("predicate");
 					Binding classToAddTo = binding.getBinding("classPartition");
 					Binding otherClass = binding.getBinding("class2Partition");
-					
+
 					if (otherClass == null) {
-						
+
 					}
 					Builder cb = classBuilders.get(classToAddTo.getValue());
 					assert cb != null : "ClassBuilder not found for " + otherClass.getValue().stringValue();
@@ -167,7 +181,7 @@ public class GenerateJavaFromVoID {
 			}
 		}
 	}
-	
+
 	public void buildMethodsReturningLiterals(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
@@ -190,8 +204,7 @@ public class GenerateJavaFromVoID {
 					Binding predicate = binding.getBinding("predicate");
 					Binding classToAddTo = binding.getBinding("classPartition");
 					IRI datatypeB = (IRI) binding.getBinding("datatype").getValue();
-					
-					
+
 					Builder cb = classBuilders.get(classToAddTo.getValue());
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					String predicateString = predicate.getValue().stringValue();
@@ -208,8 +221,22 @@ public class GenerateJavaFromVoID {
 			}
 		}
 	}
-	
-	private Map<IRI, Class<?>> literalToClassMap = Map.of(XSD.STRING, String.class, XSD.INT, Integer.class, XSD.INTEGER, Integer.class);
+
+	// TODO needs to be expanded to all known literals. And lang string needs to be considered.
+
+	private Map<IRI, Class<?>> literalToClassMap = Map.ofEntries(Map.entry(XSD.STRING, String.class),
+			Map.entry(XSD.INT, Integer.class), Map.entry(XSD.INTEGER, Integer.class), Map.entry(XSD.ANYURI, URI.class),
+			Map.entry(XSD.BASE64BINARY, String.class), Map.entry(XSD.BOOLEAN, Boolean.class),
+			Map.entry(XSD.BYTE, Byte.class), Map.entry(XSD.DATE, LocalDate.class),
+			Map.entry(XSD.DATETIME, LocalDateTime.class), Map.entry(XSD.DATETIMESTAMP, Instant.class),
+			Map.entry(XSD.DAYTIMEDURATION, Duration.class), Map.entry(XSD.DECIMAL, Double.class),
+			Map.entry(XSD.DOUBLE, Double.class), Map.entry(XSD.DURATION, Duration.class),
+			Map.entry(XSD.FLOAT, Float.class), Map.entry(XSD.GYEAR, Year.class),
+			Map.entry(XSD.GYEARMONTH, YearMonth.class), Map.entry(XSD.LONG, Long.class),
+			Map.entry(XSD.NEGATIVE_INTEGER, Integer.class), Map.entry(XSD.NON_NEGATIVE_INTEGER, Integer.class),
+			Map.entry(XSD.NON_POSITIVE_INTEGER, Integer.class), Map.entry(XSD.POSITIVE_INTEGER, Integer.class),
+			Map.entry(XSD.SHORT, Short.class),
+			Map.entry(RDF.LANGSTRING.getIri(), String.class));
 
 	private Map<IRI, Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
