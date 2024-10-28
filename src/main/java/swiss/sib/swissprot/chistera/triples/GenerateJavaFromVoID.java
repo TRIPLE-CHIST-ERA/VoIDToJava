@@ -3,6 +3,7 @@ package swiss.sib.swissprot.chistera.triples;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.ParameterizedType;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,11 +15,15 @@ import java.time.Year;
 import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import javax.lang.model.element.Modifier;
 
@@ -45,10 +50,20 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.JavaFile.Builder;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeVariableName;
+import com.palantir.javapoet.WildcardTypeName;
 
 public class GenerateJavaFromVoID {
+	private static final String UTIL_CLASSNAME = "Sparql";
+
+	private static final String UTIL_PACKAGE = "swiss.sib.swissprot.chistera.triples.sparql";
+
 	private static final String PREFIXES = """
 			PREFIX dcterms: <http://purl.org/dc/terms/>
 			PREFIX foaf: <http://xmlns.com/foaf/0.1/>
@@ -97,8 +112,34 @@ public class GenerateJavaFromVoID {
 				s.forEach((n) -> ns.put(n.getName(), n));
 			}
 		}
+		makeUtils(ms, outputDirectory);
 		makePackages(ms, outputDirectory);
 		ms.shutDown();
+	}
+
+	private void makeUtils(SailRepository ms, File outputDirectory) throws IOException {
+		
+		TypeSpec.Builder b = TypeSpec.classBuilder(UTIL_CLASSNAME).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
+		TypeVariableName returnTypeBound = TypeVariableName.get("T");
+		MethodSpec.Builder mb = MethodSpec.methodBuilder("iteratorToStream");
+		mb.addModifiers(Modifier.PUBLIC, Modifier.STATIC);
+		mb.addParameter(RepositoryResult.class, "result");
+		TypeName value = TypeVariableName.get(Value.class);
+		
+		ParameterSpec.Builder fb = ParameterSpec.builder(ParameterizedTypeName.get(ClassName.get(Function.class), value, returnTypeBound), "transformer");
+		fb.addModifiers(Modifier.FINAL);
+		mb.addParameter(fb.build());
+		mb.addTypeVariable(returnTypeBound);
+		ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnTypeBound);
+		
+		mb.returns(returnType);
+		mb.addStatement("return stream.map((bs) -> bs.getBinding(\"object\")).map($T::getValue)", Binding.class);
+		
+		b.addMethod(mb.build());
+		JavaFile javaFile = JavaFile.builder(UTIL_PACKAGE, b.build()).build();
+		javaFile.writeTo(outputDirectory);
+
+		
 	}
 
 	private void makePackages(SailRepository ms, File outputDirectory) throws IOException {
@@ -118,13 +159,16 @@ public class GenerateJavaFromVoID {
 					buildMethodsOnTypesInAGraph(outputDirectory, name, packageName, conn, resource,
 							buildTypeClasssesForAGraph);
 					for (TypeSpec.Builder b : buildTypeClasssesForAGraph.values()) {
-						JavaFile javaFile = JavaFile.builder(packageName, b.build()).build();
+						Builder jb = JavaFile.builder(packageName, b.build());
+						jb.addStaticImport(ClassName.get(UTIL_PACKAGE, UTIL_CLASSNAME), "iteratorToStream");
+						JavaFile javaFile = jb.build();
+//						javaFile.addStaticImport();
 						javaFile.writeTo(outputDirectory);
 					}
 				}
 			}
 		}
-
+		
 	}
 
 	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
@@ -184,29 +228,23 @@ public class GenerateJavaFromVoID {
 					TypeSpec.Builder v = classBuilders.get(otherClass.getValue());
 					
 					ClassName returnType = ClassName.get("", v.build().name());
-					methodBuilder.returns(returnType);
+					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnType);
+					methodBuilder.returns(streamType);
 					CodeBlock.Builder cbb = CodeBlock.builder();
-					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+//					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+//							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+//					
+//					cb.addField(fieldBuilder);
+					String qn = methodName+"_query";
+					FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(isIRI(?object))}}\"", graphName.stringValue(), predicateString)
+							.build();
+					cb.addField(qf);			
 					
-					cb.addField(fieldBuilder);
-					
-					cbb.addStatement("String query = $S", "SELECT ?object WHERE { GRAPH ?graph { ?id ?predicate ?object }}");
-					cbb.addStatement("$T tq = conn.prepareTupleQuery(query)", TupleQuery.class);
-					cbb.addStatement("tq.setBinding($S, graph)", "graph");
+					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
 					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("tq.setBinding(\"predicate\", $L)", fieldBuilder.name());
-					cbb.beginControlFlow("try ($T tqr = tq.evaluate()) ", TupleQueryResult.class);
-					
-					cbb.beginControlFlow("while (tqr.hasNext())");
-					cbb.addStatement("$T bs = tqr.next()", BindingSet.class);
-					cbb.addStatement("$T object = bs.getBinding(\"object\")", Binding.class);
-					cbb.beginControlFlow("if (object != null)");
-					cbb.addStatement("return new $T(($T) object)", returnType, IRI.class);
-					cbb.endControlFlow();
-					cbb.endControlFlow();
-					cbb.endControlFlow();
-					cbb.addStatement("return null");
+					cbb.addStatement("return iteratatorToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", returnType, IRI.class);
+
 					methodBuilder.addCode(cbb.build());
 //					type
 					cb.addMethod(methodBuilder.build());
@@ -238,6 +276,7 @@ public class GenerateJavaFromVoID {
 					Binding classToAddTo = binding.getBinding("classPartition");
 					IRI datatypeB = (IRI) binding.getBinding("datatype").getValue();
 					TypeSpec.Builder cb = classBuilders.get(classToAddTo.getValue());
+					
 
 					
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
@@ -245,82 +284,71 @@ public class GenerateJavaFromVoID {
 					String methodName = fixJavaKeywords(
 							predicateString.substring(predicateString.lastIndexOf('/') + 1));
 					
-					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
-					cb.addField(fieldBuilder);
+
+//					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+//							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+//					cb.addField(fieldBuilder);
+					
+					String qn = methodName+"_query";
+					FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(datatype(?object) = <$L>)}}\"", graphName.stringValue(), predicateString, datatypeB.stringValue())
+							.build();
+					cb.addField(qf);
 					
 					
-					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
+					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(methodName);
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					CodeBlock.Builder cbb = CodeBlock.builder();
-					Class<?> returnType = returnTheRightKindOfData(datatypeB, cbb);
-					cbb.addStatement("String query = $S", "SELECT ?object WHERE { GRAPH ?graph { ?id ?predicate ?object }}");
-					cbb.addStatement("$T tq = conn.prepareTupleQuery(query)", TupleQuery.class);
-					cbb.addStatement("tq.setBinding($S, graph)", "graph");
+					Class<?> returnType = literalToClassMap.get(datatypeB);
+					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qn);
 					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("tq.setBinding(\"predicate\", $L)", fieldBuilder.name());
-					cbb.beginControlFlow("try ($T tqr = tq.evaluate()) ", TupleQueryResult.class);
-					
-					cbb.beginControlFlow("while (tqr.hasNext())");
-					cbb.addStatement("$T bs = tqr.next()", BindingSet.class);
-					cbb.addStatement("$T object = bs.getBinding(\"object\")", Binding.class);
-					cbb.beginControlFlow("if (object != null)");
-					cbb.endControlFlow();
-					cbb.endControlFlow();
-					cbb.endControlFlow();
-					cbb.addStatement("return null");
+					cbb.addStatement("return iteratatorToStream(tq.evaluate(), "+returnTheRightKindOfData(returnType)+")");
 					methodBuilder.addCode(cbb.build());
 
-					methodBuilder.returns(returnType);
+					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class), ClassName.get(returnType));
+					methodBuilder.returns(streamType);
 //					type
 					cb.addMethod(methodBuilder.build());
+					
 				}
 			}
 		}
 	}
 
-	public Class<?> returnTheRightKindOfData(IRI datatypeB, CodeBlock.Builder cbb) {
-		Class<?> returnType = literalToClassMap.get(datatypeB);
+	public String returnTheRightKindOfData(Class<?> returnType) {
 		if (returnType == String.class) {
-			cbb.addStatement("return object.getValue().stringValue()");
+			return "Value::stringValue";
 		} else if (returnType == Integer.class){
-			cbb.addStatement("return object.getValue().integerValue()");
+			return "Value::integerValue";
 		} else if (returnType == Boolean.class) {
-			cbb.addStatement("return object.getValue().booleanValue()");
+			return "Value::booleanValue";
 		} else if (returnType == Double.class) {
-			cbb.addStatement("return object.getValue().doubleValue()");
+			return "Value::doubleValue";
 		} else if (returnType == Float.class) {
-			cbb.addStatement("return object.getValue().floatValue()");
+			return "Value::floatValue";
 		} else if (returnType == Short.class) {
-			cbb.addStatement("return object.getValue().shortValue()");
+			return "Value::shortValue";
 		} else if (returnType == Long.class) {
-			cbb.addStatement("return object.getValue().longValue()");
+			return "Value::longValue";
 		} else if (returnType == Byte.class) {
-			cbb.addStatement("return object.getValue().byteValue()");
+			return "Value::byteValue";
 		} else if (returnType == URI.class) {
-			cbb.addStatement("return object.getValue().uriValue()");
+			return "Value::uriValue";
 		} else if (returnType == LocalDate.class) {
-			cbb.addStatement(
-					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate()");
+			return "(v) -> v.calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate()";
 		} else if (returnType == LocalDateTime.class) {
-			cbb.addStatement(
-					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDateTime()");
+			return "(v) -> v.calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDateTime()";
 		} else if (returnType == Instant.class) {
-			cbb.addStatement(
-					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant()");
+			return "(v) -> v.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant()";
 		} else if (returnType == Duration.class) {
-			cbb.addStatement(
-					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()");
+			return "(v) -> v.object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()";
 		} else if (returnType == Year.class) {
-			cbb.addStatement(
-					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()");
+			return "(v) -> v..calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
 		} else if (returnType == YearMonth.class) {
-			cbb.addStatement(
-					"return object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()");
+			return "(v) -> v.calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
 		} else {
-			cbb.addStatement("return object.getValue()");
+			return "Value::stringValue";
 		}
-		return returnType;
 	}
 
 	// TODO needs to be expanded to all known literals. And lang string needs to be considered.

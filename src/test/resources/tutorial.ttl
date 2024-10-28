@@ -75,7 +75,7 @@
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "2"^^xsd:long .
 
-_:dba54979e81c48dc8a2e16a16749633a2 a void:Linkset;
+_:420af89e7428452e97a241d98ec8951d2 a void:Linkset;
   void:linkPredicate <https://example.org/void-generator/test/schema#grows_on>;
   void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!9ef2c005d9ebdc38dd416ee6c9777fa5!Apple>;
   void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
@@ -106,7 +106,7 @@ _:dba54979e81c48dc8a2e16a16749633a2 a void:Linkset;
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "1"^^xsd:long .
 
-_:dba54979e81c48dc8a2e16a16749633a3 a void:Linkset;
+_:420af89e7428452e97a241d98ec8951d3 a void:Linkset;
   void:linkPredicate <https://example.org/void-generator/test/schema#growns_on>;
   void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>;
   void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
@@ -123,7 +123,7 @@ _:dba54979e81c48dc8a2e16a16749633a3 a void:Linkset;
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "2"^^xsd:long .
 
-_:dba54979e81c48dc8a2e16a16749633a4 a void:Linkset;
+_:420af89e7428452e97a241d98ec8951d4 a void:Linkset;
   void:linkPredicate <https://example.org/void-generator/test/schema#grows_on>;
   void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!60286502596782a072b293ff2c6891ab!Fruit>;
   void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
@@ -158,7 +158,7 @@ _:dba54979e81c48dc8a2e16a16749633a4 a void:Linkset;
   void:class <https://example.org/void-generator/test/schema#FruitTree>;
   void:triples "1"^^xsd:long .
 
-_:dba54979e81c48dc8a2e16a16749633a5 a void:Linkset;
+_:420af89e7428452e97a241d98ec8951d5 a void:Linkset;
   void:linkPredicate <https://example.org/void-generator/test/schema#growns_on>;
   void:subjectsTarget <https://example.org/.well-known/void#tutorial.trig!0fecbe1bedf023c93ebca1f2c7cb7116!Pear>;
   void:objectsTarget <https://example.org/.well-known/void#tutorial.trig!4284e73c036301194236cb01e7c04b88!FruitTree>;
