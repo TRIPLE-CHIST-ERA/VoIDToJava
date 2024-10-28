@@ -3,7 +3,6 @@ package swiss.sib.swissprot.chistera.triples;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.ParameterizedType;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,15 +14,12 @@ import java.time.Year;
 import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 import javax.lang.model.element.Modifier;
 
@@ -57,7 +53,6 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.TypeVariableName;
-import com.palantir.javapoet.WildcardTypeName;
 
 public class GenerateJavaFromVoID {
 	private static final String UTIL_CLASSNAME = "Sparql";
@@ -151,19 +146,17 @@ public class GenerateJavaFromVoID {
 					IRI resource = (IRI) namedGraph;
 					URI uri = URI.create(resource.stringValue());
 					String path = uri.getPath();
-					String name = fixJavaKeywords(path.substring(path.lastIndexOf('/') + 1)) + "Graph";
+					String name = "Graph";
 					String packageName = getPackageName(uri).toString();
-					buildClassForAGraph(outputDirectory, name, packageName);
+					buildClassForAGraph(outputDirectory, name, packageName, resource, conn);
 					Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph = buildTypeClasssesForAGraph(outputDirectory, name,
 							packageName, conn, resource);
 					buildMethodsOnTypesInAGraph(outputDirectory, name, packageName, conn, resource,
 							buildTypeClasssesForAGraph);
 					for (TypeSpec.Builder b : buildTypeClasssesForAGraph.values()) {
 						Builder jb = JavaFile.builder(packageName, b.build());
-						jb.addStaticImport(ClassName.get(UTIL_PACKAGE, UTIL_CLASSNAME), "iteratorToStream");
-						JavaFile javaFile = jb.build();
-//						javaFile.addStaticImport();
-						javaFile.writeTo(outputDirectory);
+						jb.addStaticImport(ClassName.get(UTIL_PACKAGE, UTIL_CLASSNAME), "resultToStream");
+						jb.build().writeTo(outputDirectory);
 					}
 				}
 			}
@@ -302,7 +295,7 @@ public class GenerateJavaFromVoID {
 					Class<?> returnType = literalToClassMap.get(datatypeB);
 					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qn);
 					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("return iteratatorToStream(tq.evaluate(), "+returnTheRightKindOfData(returnType)+")");
+					cbb.addStatement("return resultToStream(tq.evaluate(), "+returnTheRightKindOfData(returnType)+")");
 					methodBuilder.addCode(cbb.build());
 
 					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class), ClassName.get(returnType));
@@ -404,20 +397,60 @@ public class GenerateJavaFromVoID {
 			}).findAny();
 			if (any.isPresent()) {
 				Namespace ns = any.get();
-				return ns.getPrefix() + path.substring(ns.getName().length());
+				return ns.getPrefix() + path.substring(ns.getName().length()).replace('.', '_');
 			} else {
 				// If there is no namespace, return the last part to have higher chance of
 				// having a good class name.
-				return path.substring(path.lastIndexOf('/') + 1);
+				return path.substring(path.lastIndexOf('/') + 1).replace('.', '_');
 			}
 		}
 	}
 
-	private void buildClassForAGraph(File outputDirectory, String name, String packageName) throws IOException {
-		TypeSpec helloWorld = TypeSpec.classBuilder(name).addModifiers(Modifier.PUBLIC, Modifier.FINAL).build();
+	private void buildClassForAGraph(File outputDirectory, String name, String packageName, IRI resource, RepositoryConnection conn) throws IOException {
+		TypeSpec.Builder graphC = TypeSpec.classBuilder(name).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
+		
+		buildClassFindMethodsForAGraph(graphC, resource, conn);
 
-		JavaFile javaFile = JavaFile.builder(packageName, helloWorld).build();
+		JavaFile javaFile = JavaFile.builder(packageName, graphC.build()).build();
 		javaFile.writeTo(outputDirectory);
+	}
+
+	private void buildClassFindMethodsForAGraph(TypeSpec.Builder graphC, IRI graphName, RepositoryConnection conn) {
+		graphC.addField(FieldSpec.builder(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL).build());
+		graphC.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
+				.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn").build());
+		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
+				SELECT ?classPartition ?class
+				WHERE {
+					?graph sd:graph/void:classPartition ?classPartition .
+					?classPartition void:class ?class .
+				}
+				""");
+		tq.setBinding("graph", graphName);
+		try (TupleQueryResult tqr = tq.evaluate()) {
+			while (tqr.hasNext()) {
+				BindingSet bs = tqr.next();
+				Binding cIri = bs.getBinding("class");
+				String className = fixJavaKeywords(extract(cIri.getValue().stringValue()));
+				
+				ClassName type = ClassName.get("", className);
+				ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
+				MethodSpec.Builder mb = MethodSpec.methodBuilder("all"+className).returns(returnType).addModifiers(Modifier.PUBLIC);
+				
+				String qn = "all_"+className+"_query";
+				FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+						.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> }}\"", graphName.stringValue(), cIri.getValue().stringValue())
+						.build();
+				graphC.addField(qf);
+				CodeBlock.Builder cbb = CodeBlock.builder();
+				cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
+				cbb.addStatement("return iteratatorToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type, IRI.class);
+
+				mb.addCode(cbb.build());
+				graphC.addMethod(mb.build());
+				
+			}
+		}
 	}
 
 	StringBuilder getPackageName(URI uri) {
@@ -425,7 +458,7 @@ public class GenerateJavaFromVoID {
 		if (uri.getHost() != null) {
 			List<String> hostPartsAsList = Arrays.asList(uri.getHost().split("\\."));
 			for (int i = hostPartsAsList.size() - 1; i >= 0; i--) {
-				packageName.append(fixJavaKeywords(hostPartsAsList.get(i)));
+				packageName.append(fixJavaKeywords(hostPartsAsList.get(i)).replace('.', '_'));
 				if (i > 0) {
 					packageName.append('.');
 				}
@@ -437,7 +470,7 @@ public class GenerateJavaFromVoID {
 				packageName.append(".");
 			}
 			for (int i = 1; i < partsDirsAsList.size(); i++) {
-				packageName.append(fixJavaKeywords(partsDirsAsList.get(i)));
+				packageName.append(fixJavaKeywords(partsDirsAsList.get(i)).replace('.', '_'));
 				if (i < partsDirsAsList.size() - 1) {
 					packageName.append('.');
 				}
