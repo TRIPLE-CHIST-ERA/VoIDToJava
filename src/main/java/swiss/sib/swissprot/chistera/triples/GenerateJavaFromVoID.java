@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -55,6 +57,123 @@ import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.TypeVariableName;
 
 public class GenerateJavaFromVoID {
+
+	private static final String POM_TEMPLATE = """
+			<?xml version="1.0" encoding="UTF-8"?>
+			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+			  <modelVersion>4.0.0</modelVersion>
+			  <groupId>${groupId}</groupId>
+			  <artifactId>${artifactId}</artifactId>
+			  <version>${version}</version>
+			  <properties>
+			    <rdf4j.version>5.0.2</rdf4j.version>
+			    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+			  </properties>
+			  <dependencyManagement>
+			    <dependencies>
+			      <dependency>
+			        <groupId>org.eclipse.rdf4j</groupId>
+			        <artifactId>rdf4j-bom</artifactId>
+			        <version>${rdf4j.version}</version>
+			        <type>pom</type>
+			        <scope>import</scope>
+			      </dependency>
+			    </dependencies>
+			  </dependencyManagement>
+			  <dependencies>
+			    <dependency>
+			      <groupId>org.slf4j</groupId>
+			      <artifactId>slf4j-api</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-sail-base</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-sail-memory</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-rio-api</artifactId>
+			      <exclusions>
+			        <exclusion>
+			          <groupId>org.apache.httpcomponents</groupId>
+			          <artifactId>httpclient-osgi</artifactId>
+			        </exclusion>
+			        <exclusion>
+			          <groupId>org.apache.httpcomponents</groupId>
+			          <artifactId>httpcore-osgi</artifactId>
+			        </exclusion>
+			      </exclusions>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-rio-rdfxml</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-queryresultio-sparqljson</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-queryresultio-sparqlxml</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-rio-turtle</artifactId>
+			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-repository-sail</artifactId>
+			    </dependency>
+			  </dependencies>
+			  <build>
+			    <plugins>
+			     <plugin>
+			        <groupId>org.apache.maven.plugins</groupId>
+			        <artifactId>maven-compiler-plugin</artifactId>
+			        <version>3.8.0</version>
+			        <configuration>
+			          <release>21</release>
+			          <debug>true</debug>
+			          <debuglevel>lines,vars,source</debuglevel>
+			        </configuration>
+			      </plugin>
+			      <plugin>
+			        <groupId>org.apache.maven.plugins</groupId>
+			        <artifactId>maven-surefire-plugin</artifactId>
+			        <version>3.0.0</version>
+			        <configuration>
+			          <testFailureIgnore>false</testFailureIgnore>
+			        </configuration>
+			      </plugin>
+			      <plugin>
+			        <groupId>org.apache.maven.plugins</groupId>
+			        <artifactId>maven-site-plugin</artifactId>
+			        <version>3.7.1</version>
+			      </plugin>
+			    </plugins>
+			  </build>
+			  <reporting>
+			    <plugins>
+			      <plugin>
+			        <groupId>org.codehaus.mojo</groupId>
+			        <artifactId>versions-maven-plugin</artifactId>
+			        <version>2.8.1</version>
+			        <reportSets>
+			          <reportSet>
+			            <reports>
+			              <report>dependency-updates-report</report>
+			              <report>plugin-updates-report</report>
+			              <report>property-updates-report</report>
+			            </reports>
+			          </reportSet>
+			        </reportSets>
+			      </plugin>
+			    </plugins>
+			  </reporting>
+			</project>""";
 	private static final String UTIL_CLASSNAME = "Sparql";
 
 	private static final String UTIL_PACKAGE = "swiss.sib.swissprot.chistera.triples.sparql";
@@ -107,34 +226,46 @@ public class GenerateJavaFromVoID {
 				s.forEach((n) -> ns.put(n.getName(), n));
 			}
 		}
-		makeUtils(ms, outputDirectory);
-		makePackages(ms, outputDirectory);
+		File sourceDir = new File(outputDirectory, "src/main/java/");
+		sourceDir.mkdirs();
+		makeUtils(ms, sourceDir);
+		makePackages(ms, sourceDir);
+		makePom(outputDirectory);
 		ms.shutDown();
 	}
 
+	private void makePom(File outputDirectory) throws IOException {
+		String pom = POM_TEMPLATE.replace("${groupId}", "org.example").replace("${artifactId}", "example")
+				.replace("${version}", "1.0.0");
+		Files.writeString(new File(outputDirectory, "pom.xml").toPath(), pom, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING);
+
+	}
+
 	private void makeUtils(SailRepository ms, File outputDirectory) throws IOException {
-		
+
 		TypeSpec.Builder b = TypeSpec.classBuilder(UTIL_CLASSNAME).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
 		TypeVariableName returnTypeBound = TypeVariableName.get("T");
-		MethodSpec.Builder mb = MethodSpec.methodBuilder("iteratorToStream");
+		MethodSpec.Builder mb = MethodSpec.methodBuilder("resultToStream");
 		mb.addModifiers(Modifier.PUBLIC, Modifier.STATIC);
-		mb.addParameter(RepositoryResult.class, "result");
+		TypeName bindingSet = ClassName.get(BindingSet.class);
+		mb.addParameter(ParameterizedTypeName.get(ClassName.get(QueryResult.class), bindingSet), "result");
 		TypeName value = TypeVariableName.get(Value.class);
-		
-		ParameterSpec.Builder fb = ParameterSpec.builder(ParameterizedTypeName.get(ClassName.get(Function.class), value, returnTypeBound), "transformer");
+
+		ParameterSpec.Builder fb = ParameterSpec.builder(
+				ParameterizedTypeName.get(ClassName.get(Function.class), value, returnTypeBound), "transformer");
 		fb.addModifiers(Modifier.FINAL);
 		mb.addParameter(fb.build());
 		mb.addTypeVariable(returnTypeBound);
 		ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnTypeBound);
-		
+
 		mb.returns(returnType);
-		mb.addStatement("return stream.map((bs) -> bs.getBinding(\"object\")).map($T::getValue)", Binding.class);
-		
+		mb.addStatement("return result.stream().map((bs) -> bs.getBinding(\"object\")).map($T::getValue).map(transformer)", Binding.class);
+
 		b.addMethod(mb.build());
 		JavaFile javaFile = JavaFile.builder(UTIL_PACKAGE, b.build()).build();
 		javaFile.writeTo(outputDirectory);
 
-		
 	}
 
 	private void makePackages(SailRepository ms, File outputDirectory) throws IOException {
@@ -145,12 +276,11 @@ public class GenerateJavaFromVoID {
 					Value namedGraph = res.next().getBinding("namedGraph").getValue();
 					IRI resource = (IRI) namedGraph;
 					URI uri = URI.create(resource.stringValue());
-					String path = uri.getPath();
 					String name = "Graph";
 					String packageName = getPackageName(uri).toString();
 					buildClassForAGraph(outputDirectory, name, packageName, resource, conn);
-					Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph = buildTypeClasssesForAGraph(outputDirectory, name,
-							packageName, conn, resource);
+					Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph = buildTypeClasssesForAGraph(outputDirectory,
+							name, packageName, conn, resource);
 					buildMethodsOnTypesInAGraph(outputDirectory, name, packageName, conn, resource,
 							buildTypeClasssesForAGraph);
 					for (TypeSpec.Builder b : buildTypeClasssesForAGraph.values()) {
@@ -161,7 +291,7 @@ public class GenerateJavaFromVoID {
 				}
 			}
 		}
-		
+
 	}
 
 	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
@@ -178,7 +308,8 @@ public class GenerateJavaFromVoID {
 			cb.addField(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL);
 			cb.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
 					.addParameter(IRI.class, "id", Modifier.FINAL).addStatement("this.id = id")
-					.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn").build());
+					.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn")
+					.build());
 		}
 	}
 
@@ -202,7 +333,7 @@ public class GenerateJavaFromVoID {
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			tq.setBinding("classPartition", en.getKey());
 			TypeSpec.Builder cb = classBuilders.get(en.getKey());
-		
+
 			try (TupleQueryResult tqr = tq.evaluate()) {
 				while (tqr.hasNext()) {
 					BindingSet binding = tqr.next();
@@ -219,24 +350,29 @@ public class GenerateJavaFromVoID {
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					TypeSpec.Builder v = classBuilders.get(otherClass.getValue());
-					
+
 					ClassName returnType = ClassName.get("", v.build().name());
-					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnType);
+					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
+							returnType);
 					methodBuilder.returns(streamType);
 					CodeBlock.Builder cbb = CodeBlock.builder();
 //					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-//							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+//							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					
 //					cb.addField(fieldBuilder);
-					String qn = methodName+"_query";
-					FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(isIRI(?object))}}\"", graphName.stringValue(), predicateString)
+					String qn = methodName + "_query";
+					FieldSpec qf = FieldSpec
+							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+							.initializer(
+									"\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(isIRI(?object))}}\"",
+									graphName.stringValue(), predicateString)
 							.build();
-					cb.addField(qf);			
-					
+					cb.addField(qf);
+
 					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
 					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("return iteratatorToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", returnType, IRI.class);
+					cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))",
+							returnType, IRI.class);
 
 					methodBuilder.addCode(cbb.build());
 //					type
@@ -269,40 +405,41 @@ public class GenerateJavaFromVoID {
 					Binding classToAddTo = binding.getBinding("classPartition");
 					IRI datatypeB = (IRI) binding.getBinding("datatype").getValue();
 					TypeSpec.Builder cb = classBuilders.get(classToAddTo.getValue());
-					
 
-					
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					String predicateString = predicate.getValue().stringValue();
 					String methodName = fixJavaKeywords(
 							predicateString.substring(predicateString.lastIndexOf('/') + 1));
-					
 
 //					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-//							.initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, predicateString).build();
+//							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					cb.addField(fieldBuilder);
-					
-					String qn = methodName+"_query";
-					FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(datatype(?object) = <$L>)}}\"", graphName.stringValue(), predicateString, datatypeB.stringValue())
+
+					String qn = methodName + "_query";
+					FieldSpec qf = FieldSpec
+							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+							.initializer(
+									"\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(datatype(?object) = <$L>)}}\"",
+									graphName.stringValue(), predicateString, datatypeB.stringValue())
 							.build();
 					cb.addField(qf);
-					
-					
+
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(methodName);
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					CodeBlock.Builder cbb = CodeBlock.builder();
 					Class<?> returnType = literalToClassMap.get(datatypeB);
 					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qn);
 					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("return resultToStream(tq.evaluate(), "+returnTheRightKindOfData(returnType)+")");
+					cbb.addStatement(
+							"return resultToStream(tq.evaluate(), " + returnTheRightKindOfData(returnType) + ")", Value.class);
 					methodBuilder.addCode(cbb.build());
 
-					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class), ClassName.get(returnType));
+					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
+							ClassName.get(returnType));
 					methodBuilder.returns(streamType);
 //					type
 					cb.addMethod(methodBuilder.build());
-					
+
 				}
 			}
 		}
@@ -310,41 +447,42 @@ public class GenerateJavaFromVoID {
 
 	public String returnTheRightKindOfData(Class<?> returnType) {
 		if (returnType == String.class) {
-			return "Value::stringValue";
-		} else if (returnType == Integer.class){
-			return "Value::integerValue";
+			return "$T::stringValue";
+		} else if (returnType == Integer.class) {
+			return "$T::integerValue";
 		} else if (returnType == Boolean.class) {
-			return "Value::booleanValue";
+			return "$T::booleanValue";
 		} else if (returnType == Double.class) {
-			return "Value::doubleValue";
+			return "$T::doubleValue";
 		} else if (returnType == Float.class) {
-			return "Value::floatValue";
+			return "$T::floatValue";
 		} else if (returnType == Short.class) {
-			return "Value::shortValue";
+			return "$T::shortValue";
 		} else if (returnType == Long.class) {
-			return "Value::longValue";
+			return "$T::longValue";
 		} else if (returnType == Byte.class) {
-			return "Value::byteValue";
+			return "$T::byteValue";
 		} else if (returnType == URI.class) {
-			return "Value::uriValue";
+			return "$T::uriValue";
 		} else if (returnType == LocalDate.class) {
-			return "(v) -> v.calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate()";
+			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate()";
 		} else if (returnType == LocalDateTime.class) {
-			return "(v) -> v.calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDateTime()";
+			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDateTime()";
 		} else if (returnType == Instant.class) {
-			return "(v) -> v.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant()";
+			return "(v) -> (($T) v).getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant()";
 		} else if (returnType == Duration.class) {
-			return "(v) -> v.object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()";
+			return "(v) -> (($T) v).object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()";
 		} else if (returnType == Year.class) {
-			return "(v) -> v..calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
+			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
 		} else if (returnType == YearMonth.class) {
-			return "(v) -> v.calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
+			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
 		} else {
 			return "Value::stringValue";
 		}
 	}
 
-	// TODO needs to be expanded to all known literals. And lang string needs to be considered.
+	// TODO needs to be expanded to all known literals. And lang string needs to be
+	// considered.
 
 	private Map<IRI, Class<?>> literalToClassMap = Map.ofEntries(Map.entry(XSD.STRING, String.class),
 			Map.entry(XSD.INT, Integer.class), Map.entry(XSD.INTEGER, Integer.class), Map.entry(XSD.ANYURI, URI.class),
@@ -357,8 +495,7 @@ public class GenerateJavaFromVoID {
 			Map.entry(XSD.GYEARMONTH, YearMonth.class), Map.entry(XSD.LONG, Long.class),
 			Map.entry(XSD.NEGATIVE_INTEGER, Integer.class), Map.entry(XSD.NON_NEGATIVE_INTEGER, Integer.class),
 			Map.entry(XSD.NON_POSITIVE_INTEGER, Integer.class), Map.entry(XSD.POSITIVE_INTEGER, Integer.class),
-			Map.entry(XSD.SHORT, Short.class),
-			Map.entry(RDF.LANGSTRING.getIri(), String.class));
+			Map.entry(XSD.SHORT, Short.class), Map.entry(RDF.LANGSTRING.getIri(), String.class));
 
 	private Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
@@ -373,14 +510,19 @@ public class GenerateJavaFromVoID {
 		tq.setBinding("graph", graphName);
 		try (TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
-				BindingSet binding = tqr.next();	
+				BindingSet binding = tqr.next();
 				Binding cIri = binding.getBinding("class");
 				String className = cIri.getValue().stringValue();
 
 				className = fixJavaKeywords(extract(className));
 
-				TypeSpec.Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
-				FieldSpec graphfield = FieldSpec.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC).initializer("$T.getInstance().createIri($S)", SimpleValueFactory.class, graphName.stringValue()).build();
+				TypeSpec.Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC,
+						Modifier.FINAL);
+				FieldSpec graphfield = FieldSpec
+						.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+						.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class,
+								graphName.stringValue())
+						.build();
 				classBuilder.addField(graphfield);
 				IRI classIri = (IRI) binding.getBinding("classPartition").getValue();
 				classBuilders.put(classIri, classBuilder);
@@ -406,19 +548,22 @@ public class GenerateJavaFromVoID {
 		}
 	}
 
-	private void buildClassForAGraph(File outputDirectory, String name, String packageName, IRI resource, RepositoryConnection conn) throws IOException {
+	private void buildClassForAGraph(File outputDirectory, String name, String packageName, IRI resource,
+			RepositoryConnection conn) throws IOException {
 		TypeSpec.Builder graphC = TypeSpec.classBuilder(name).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
-		
-		buildClassFindMethodsForAGraph(graphC, resource, conn);
 
-		JavaFile javaFile = JavaFile.builder(packageName, graphC.build()).build();
-		javaFile.writeTo(outputDirectory);
+		buildClassFindMethodsForAGraph(graphC, resource, conn);
+		JavaFile.Builder javaFile = JavaFile.builder(packageName, graphC.build());
+		javaFile.addStaticImport(ClassName.get(UTIL_PACKAGE, UTIL_CLASSNAME), "resultToStream");
+		javaFile.build().writeTo(outputDirectory);
 	}
 
 	private void buildClassFindMethodsForAGraph(TypeSpec.Builder graphC, IRI graphName, RepositoryConnection conn) {
-		graphC.addField(FieldSpec.builder(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL).build());
+		graphC.addField(
+				FieldSpec.builder(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL).build());
 		graphC.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
-				.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn").build());
+				.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn")
+				.build());
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT ?classPartition ?class
 				WHERE {
@@ -432,23 +577,26 @@ public class GenerateJavaFromVoID {
 				BindingSet bs = tqr.next();
 				Binding cIri = bs.getBinding("class");
 				String className = fixJavaKeywords(extract(cIri.getValue().stringValue()));
-				
+
 				ClassName type = ClassName.get("", className);
 				ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
-				MethodSpec.Builder mb = MethodSpec.methodBuilder("all"+className).returns(returnType).addModifiers(Modifier.PUBLIC);
-				
-				String qn = "all_"+className+"_query";
+				MethodSpec.Builder mb = MethodSpec.methodBuilder("all" + className).returns(returnType)
+						.addModifiers(Modifier.PUBLIC);
+
+				String qn = "all_" + className + "_query";
 				FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-						.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> }}\"", graphName.stringValue(), cIri.getValue().stringValue())
+						.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> }}\"",
+								graphName.stringValue(), cIri.getValue().stringValue())
 						.build();
 				graphC.addField(qf);
 				CodeBlock.Builder cbb = CodeBlock.builder();
 				cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
-				cbb.addStatement("return iteratatorToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type, IRI.class);
+				cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type,
+						IRI.class);
 
 				mb.addCode(cbb.build());
 				graphC.addMethod(mb.build());
-				
+
 			}
 		}
 	}
