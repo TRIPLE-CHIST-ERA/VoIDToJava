@@ -373,7 +373,7 @@ public class GenerateJavaFromVoID {
 //							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					
 //					cb.addField(fieldBuilder);
-					String qn = methodName + "_query";
+					String qn = methodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 							.initializer(
@@ -430,7 +430,7 @@ public class GenerateJavaFromVoID {
 //							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					cb.addField(fieldBuilder);
 					String methodName = methodNamePrefix + "_" + methodNamePostFix;
-					String qn = methodName + "_query";
+					String qn = methodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 							.initializer(
@@ -536,12 +536,12 @@ public class GenerateJavaFromVoID {
 
 				TypeSpec.Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC,
 						Modifier.FINAL);
-				FieldSpec graphfield = FieldSpec
-						.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-						.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class,
-								graphName.stringValue())
-						.build();
-				classBuilder.addField(graphfield);
+//				FieldSpec graphField = FieldSpec
+//						.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+//						.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class,
+//								graphName.stringValue())
+//						.build();
+//				classBuilder.addField(graphField);
 				IRI classIri = (IRI) binding.getBinding("classPartition").getValue();
 				classBuilders.put(classIri, classBuilder);
 			}
