@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.util.Vocabularies;
 import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.APF;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
@@ -68,7 +67,6 @@ import org.eclipse.rdf4j.model.vocabulary.VANN;
 import org.eclipse.rdf4j.model.vocabulary.VCARD4;
 import org.eclipse.rdf4j.model.vocabulary.VOID;
 import org.eclipse.rdf4j.model.vocabulary.WGS84;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -397,12 +395,13 @@ public class GenerateJavaFromVoID {
 	public void buildMethodsReturningObjects(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartition ?classType ?predicate ?class2Partition
+				SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
 				WHERE {
 				  ?graph sd:graph/void:classPartition ?classPartition .
 				  ?classPartition void:class ?classType .
 				  ?classPartition void:propertyPartition ?predicatePartition .
 				  ?predicatePartition void:property ?predicate .
+				  ?class2Partition void:class ?class2Type .
 				  [] a void:Linkset ;
 				  	 void:objectsTarget ?class2Partition ;
 				  	 void:linkPredicate ?predicate ;
@@ -419,28 +418,24 @@ public class GenerateJavaFromVoID {
 				while (tqr.hasNext()) {
 					BindingSet binding = tqr.next();
 					Binding predicate = binding.getBinding("predicate");
-					Binding otherClass = binding.getBinding("class2Partition");
+					Binding otherClassPartition = binding.getBinding("class2Partition");
+					Binding otherClass = binding.getBinding("class2Type");
 
-					if (otherClass == null) {
+					assert cb != null : "ClassBuilder not found for " + otherClassPartition.getValue().stringValue();
+					IRI predicateIri = (IRI) predicate.getValue();
+					String predicateString = predicateIri.stringValue();
 
-					}
-					assert cb != null : "ClassBuilder not found for " + otherClass.getValue().stringValue();
-					String predicateString = predicate.getValue().stringValue();
-					String methodName = fixJavaKeywords(
-							predicateString.substring(predicateString.lastIndexOf('/') + 1));
+					String methodName = coreMethodName((IRI) otherClass.getValue(), predicateIri);
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
-					TypeSpec.Builder v = classBuilders.get(otherClass.getValue());
+					TypeSpec.Builder v = classBuilders.get(otherClassPartition.getValue());
 
 					ClassName returnType = ClassName.get("", v.build().name());
 					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
 							returnType);
 					methodBuilder.returns(streamType);
 					CodeBlock.Builder cbb = CodeBlock.builder();
-//					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, fixJavaKeywords(methodName)+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-//							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
-//					
-//					cb.addField(fieldBuilder);
+
 					String qn = methodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
@@ -489,27 +484,16 @@ public class GenerateJavaFromVoID {
 
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					IRI predicateIri = (IRI) predicate.getValue();
-					String predicateString = predicateIri.getLocalName();
-					Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue)
-							.filter((e) -> e.getName().equals(predicateIri.getNamespace())).findFirst();
-					if (first.isPresent()) {
-						predicateString = first.get().getPrefix() + "_" + predicateString;
-					}
-					String methodNamePrefix = fixJavaKeywords(
-							predicateString.substring(predicateString.lastIndexOf('/') + 1));
-					String datatypeString = datatypeB.stringValue();
-					String methodNamePostFix = fixJavaKeywords(
-							datatypeString.substring(datatypeString.lastIndexOf('#') + 1));
+					String methodName = coreMethodName(datatypeB, predicateIri);
 //					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 //							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					cb.addField(fieldBuilder);
-					String methodName = methodNamePrefix + "_" + methodNamePostFix;
 					String qn = methodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 							.initializer(
 									"\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(datatype(?object) = <$L>)}}\"",
-									graphName.stringValue(), predicateString, datatypeB.stringValue())
+									graphName.stringValue(), predicateIri.stringValue(), datatypeB.stringValue())
 							.build();
 					cb.addField(qf);
 
@@ -534,6 +518,29 @@ public class GenerateJavaFromVoID {
 				}
 			}
 		}
+	}
+
+	protected String coreMethodName(IRI datatypeB, IRI predicateIri) {
+		String predicateString = predicateIri.getLocalName();
+		{
+			Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue)
+					.filter((e) -> e.getName().equals(predicateIri.getNamespace())).findFirst();
+			if (first.isPresent()) {
+				predicateString = first.get().getPrefix() + "_" + predicateString;
+			}
+		}
+		String methodNamePrefix = fixJavaKeywords(predicateString.substring(predicateString.lastIndexOf('/') + 1));
+		String datatypeString = datatypeB.getLocalName();
+		{
+			Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue)
+					.filter((e) -> e.getName().equals(datatypeB.getNamespace())).findFirst();
+			if (first.isPresent()) {
+				datatypeString = first.get().getPrefix() + "_" + datatypeString;
+			}
+		}
+		String methodNamePostFix = fixJavaKeywords(datatypeString.substring(datatypeString.lastIndexOf('#') + 1));
+		String methodName = methodNamePrefix + "_" + methodNamePostFix;
+		return methodName;
 	}
 
 	public String returnTheRightKindOfData(Class<?> returnType) {
