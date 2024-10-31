@@ -2,6 +2,7 @@ package swiss.sib.swissprot.chistera.triples;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
@@ -547,9 +548,11 @@ public class GenerateJavaFromVoID {
 		if (returnType == String.class) {
 			return "(v) -> (($T) v).stringValue()";
 		} else if (returnType == Integer.class) {
-			return "(v) -> (($T) v).integerValue()";
+			return "(v) -> (($T) v).intValue()";
 		} else if (returnType == Boolean.class) {
 			return "(v) -> (($T) v).booleanValue()";
+		} else if (returnType == BigInteger.class) {
+			return "(v) -> (($T) v).integerValue()";
 		} else if (returnType == Double.class) {
 			return "(v) -> (($T) v).doubleValue()";
 		} else if (returnType == Float.class) {
