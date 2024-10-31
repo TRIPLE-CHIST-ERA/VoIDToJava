@@ -99,6 +99,7 @@ import com.palantir.javapoet.TypeVariableName;
 
 public class GenerateJavaFromVoID {
 
+	//TODO: move to an external file and read it in.
 	private static final String POM_TEMPLATE = """
 			<?xml version="1.0" encoding="UTF-8"?>
 			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -250,6 +251,7 @@ public class GenerateJavaFromVoID {
 			""";
 	Map<String, Namespace> ns = new HashMap<>();
 
+	// TODO replace this with a nice picocli command
 	public static void main(String[] args) {
 		String input = args[0];
 		String output = args[1];
@@ -263,6 +265,17 @@ public class GenerateJavaFromVoID {
 
 	}
 
+	/**
+	 * Convert the VoID file to a set of Java classes, with a pom so that it is a
+	 * nice maven project.
+	 * 
+	 * @param inputVoid       the VoID file that was generated with Void-generator
+	 *                        or equivalent.
+	 * @param outputDirectory where to write the generated code
+	 * @throws RDFParseException   if we can't parse the VoID file
+	 * @throws RepositoryException if we can't read the VoID file
+	 * @throws IOException         if we can't write the generated code
+	 */
 	public void convert(File inputVoid, File outputDirectory)
 			throws RDFParseException, RepositoryException, IOException {
 		SailRepository ms = new SailRepository(new MemoryStore());
@@ -283,12 +296,20 @@ public class GenerateJavaFromVoID {
 		}
 		File sourceDir = new File(outputDirectory, "src/main/java/");
 		sourceDir.mkdirs();
-		makeUtils(ms, sourceDir);
+		makeUtils(sourceDir);
 		makePackages(ms, sourceDir);
 		makePom(outputDirectory);
 		ms.shutDown();
 	}
 
+	/**
+	 * We attach a set of default namespaces to the ns map. This is to ensure that
+	 * we can generate code that uses these namespaces default prefixes to generate
+	 * more readable code. E.g. we generate a java Class named RdfsClass for the RDF
+	 * class instead of a java class named
+	 * http://www.w3.org/2000/01/rdf-schema#Class which would not be valid and would
+	 * need to be mangled in some way.
+	 */
 	protected void addDefaultNamespaces() {
 		for (Class<?> v : List.of(AFN.class, APF.class, CONFIG.class, DASH.class, DC.class, DCTERMS.class, DOAP.class,
 				EARL.class, FN.class, FOAF.class, GEO.class, GEOF.class, HYDRA.class, LDP.class, LIST.class, LOCN.class,
@@ -313,57 +334,103 @@ public class GenerateJavaFromVoID {
 		}
 	}
 
+	/**
+	 * We generate a pom file so that the generated project can be built with maven.
+	 * A gradle file would be possible too, but I am more familiar with maven
+	 * 
+	 * @param outputDirectory directory to save the pom.xml file
+	 * @throws IOException if we can't write the file
+	 **/
 	private void makePom(File outputDirectory) throws IOException {
+		// TODO: find reasonable values to put in here from the VoID/Service description
+		// file.
 		String pom = POM_TEMPLATE.replace("${groupId}", "org.example").replace("${artifactId}", "example")
-				.replace("${version}", "1.0.0");
+				.replace("${version}", "1.0.0-SNAPSHOT");
 		Files.writeString(new File(outputDirectory, "pom.xml").toPath(), pom, StandardOpenOption.CREATE,
 				StandardOpenOption.TRUNCATE_EXISTING);
 
 	}
 
-	private void makeUtils(SailRepository ms, File outputDirectory) throws IOException {
+	/**
+	 * We need one small utility class, just generate it so that we don't have yet
+	 * another dependency to publish
+	 * 
+	 * @param ms
+	 * @param outputDirectory
+	 * @throws IOException
+	 */
+	private void makeUtils(File outputDirectory) throws IOException {
+
+		// First build a class, which we make public and final so that it can be
+		// used in the generated code but not modified/overriden.
 
 		TypeSpec.Builder b = TypeSpec.classBuilder(UTIL_CLASSNAME).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
+
+		// Adding a private method means that we can't construct this class. That is ok
+		// because we just want
+		// the static method on it.
+		b.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
+
+		// This type variable is to make the return type of the method generic.
 		TypeVariableName returnTypeBound = TypeVariableName.get("T");
 		MethodSpec.Builder mb = MethodSpec.methodBuilder("resultToStream");
 		mb.addModifiers(Modifier.PUBLIC, Modifier.STATIC);
 		TypeName bindingSet = ClassName.get(BindingSet.class);
 		mb.addParameter(ParameterizedTypeName.get(ClassName.get(QueryResult.class), bindingSet), "result");
-		TypeName value = TypeVariableName.get(Value.class);
 
-		ParameterSpec.Builder fb = ParameterSpec.builder(
-				ParameterizedTypeName.get(ClassName.get(Function.class), value, returnTypeBound), "transformer");
-		fb.addModifiers(Modifier.FINAL);
-		mb.addParameter(fb.build());
+		// This is a function that will be used to extract the value from the binding
+		// set.
+		TypeName valueExtractor = TypeVariableName.get(Value.class);
+		ParameterSpec.Builder veparam = ParameterSpec.builder(
+				ParameterizedTypeName.get(ClassName.get(Function.class), valueExtractor, returnTypeBound),
+				"transformer");
+		veparam.addModifiers(Modifier.FINAL);
+		mb.addParameter(veparam.build());
 		mb.addTypeVariable(returnTypeBound);
 		ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnTypeBound);
 
 		mb.returns(returnType);
+		// one liner that does the actual code, should be a multiline code block but
+		// this is easier to write.
 		mb.addStatement(
 				"return result.stream().map((bs) -> bs.getBinding(\"object\")).map($T::getValue).map(transformer)",
 				Binding.class);
 
 		b.addMethod(mb.build());
+
+		// Now we build the java file and write it to the output directory
 		JavaFile javaFile = JavaFile.builder(UTIL_PACKAGE, b.build()).build();
 		javaFile.writeTo(outputDirectory);
 
 	}
 
+	/**
+	 * We need to generate a package per named graph in the VoID file. There we will
+	 * have all the classes in use in that graph and a special class called Graph.
+	 * This class will be the root of the graph and will have methods to get all the
+	 * other classes and is the entry point for your code.
+	 * 
+	 * @param ms              to extract the VoID data from
+	 * @param outputDirectory where to write the java code to
+	 * @throws IOException if we can't write the java files
+	 */
 	private void makePackages(SailRepository ms, File outputDirectory) throws IOException {
 		try (SailRepositoryConnection conn = ms.getConnection()) {
 			TupleQuery tupleQuery = conn.prepareTupleQuery(FIND_ALL_NAMED_GRAPHS);
 			try (var res = tupleQuery.evaluate()) {
 				while (res.hasNext()) {
-					Value namedGraph = res.next().getBinding("namedGraph").getValue();
-					IRI resource = (IRI) namedGraph;
-					URI uri = URI.create(resource.stringValue());
+					IRI namedGraph = (IRI) res.next().getBinding("namedGraph").getValue();
+					URI uri = URI.create(namedGraph.stringValue());
+
+					// TODO: It might be worth looking at if we can find a better name than just
+					// graph
+					// Maybe if the Graph has a dc:title we could use that.
 					String name = "Graph";
 					String packageName = getPackageName(uri).toString();
-					buildClassForAGraph(outputDirectory, name, packageName, resource, conn);
+					buildClassForAGraph(outputDirectory, name, packageName, namedGraph, conn);
 					Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph = buildTypeClasssesForAGraph(outputDirectory,
-							name, packageName, conn, resource);
-					buildMethodsOnTypesInAGraph(outputDirectory, name, packageName, conn, resource,
-							buildTypeClasssesForAGraph);
+							name, packageName, conn, namedGraph);
+					buildMethodsOnTypesInAGraph(conn, namedGraph, buildTypeClasssesForAGraph);
 					for (TypeSpec.Builder b : buildTypeClasssesForAGraph.values()) {
 						Builder jb = JavaFile.builder(packageName, b.build());
 						jb.addStaticImport(ClassName.get(UTIL_PACKAGE, UTIL_CLASSNAME), "resultToStream");
@@ -375,15 +442,29 @@ public class GenerateJavaFromVoID {
 
 	}
 
-	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
-			SailRepositoryConnection conn, IRI graphName, Map<IRI, TypeSpec.Builder> classBuilders) {
-//		buildIdField(conn, graphName, classBuilders);
+	/**
+	 * Generate the methods to access the data and also the equals and hashCode.
+	 * 
+	 * @param conn          to query the data
+	 * @param graphName     in which the data resides
+	 * @param classBuilders to add the methods to
+	 */
+	private void buildMethodsOnTypesInAGraph(SailRepositoryConnection conn, IRI graphName,
+			Map<IRI, TypeSpec.Builder> classBuilders) {
 		buildClassEquals(conn, graphName, classBuilders);
 		buildClassHashCode(conn, graphName, classBuilders);
 		buildMethodsReturningObjects(conn, graphName, classBuilders);
 		buildMethodsReturningLiterals(conn, graphName, classBuilders);
 	}
 
+	/**
+	 * We can't use the standard record equals, as we don't want to compare the
+	 * connection, but only the id of the record.
+	 * 
+	 * @param conn          to query the data
+	 * @param graphName     in which the data resides
+	 * @param classBuilders to add the methods to
+	 */
 	private void buildClassEquals(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
@@ -392,28 +473,41 @@ public class GenerateJavaFromVoID {
 			ClassName returnType = ClassName.get("", cb.build().name());
 			CodeBlock.Builder cbb = CodeBlock.builder();
 			cbb.beginControlFlow("if (this == other)").addStatement("return true").endControlFlow()
-					.beginControlFlow("else if (other instanceof $T t)", returnType).addStatement("return id.equals(t.id)")
-					.endControlFlow()
-					.addStatement("return false");
+					.beginControlFlow("else if (other instanceof $T t)", returnType)
+					.addStatement("return id.equals(t.id)").endControlFlow().addStatement("return false");
 
 			cb.addMethod(MethodSpec.methodBuilder("equals").addModifiers(Modifier.PUBLIC)
 					.addParameter(Object.class, "other", Modifier.FINAL).addCode(cbb.build()).returns(boolean.class)
 					.build());
 		}
 	}
-	
+
+	/**
+	 * The hashCode should not look at the connection, but only at the id of the
+	 * record
+	 * 
+	 * @param conn          to query the data
+	 * @param graphName     in which the data resides
+	 * @param classBuilders to add the methods to
+	 */
 	private void buildClassHashCode(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			TypeSpec.Builder cb = en.getValue();
 
 			cb.addMethod(MethodSpec.methodBuilder("hashCode").addModifiers(Modifier.PUBLIC)
-					.addStatement("return id.hashCode()").returns(int.class)
-					.build());
+					.addStatement("return id.hashCode()").returns(int.class).build());
 		}
 	}
 
-	public void buildMethodsReturningObjects(SailRepositoryConnection conn, IRI graphName,
+	/**
+	 * We need to add methods for the classes for each type in the graph.
+	 * 
+	 * @param conn          to query the data
+	 * @param graphName     in which the data resides
+	 * @param classBuilders to add the methods to
+	 */
+	private void buildMethodsReturningObjects(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
@@ -443,44 +537,68 @@ public class GenerateJavaFromVoID {
 					Binding otherClass = binding.getBinding("class2Type");
 
 					assert cb != null : "ClassBuilder not found for " + otherClassPartition.getValue().stringValue();
-					IRI predicateIri = (IRI) predicate.getValue();
-					String predicateString = predicateIri.stringValue();
-
-					IRI otherClassString = (IRI) otherClass.getValue();
-					String rawMethodName = coreMethodName(otherClassString, predicateIri);
-					String methodName = CaseUtils.toCamelCase(rawMethodName, false, '_');
-					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
-					methodBuilder.addModifiers(Modifier.PUBLIC);
-					TypeSpec.Builder v = classBuilders.get(otherClassPartition.getValue());
-
-					ClassName returnType = ClassName.get("", v.build().name());
-					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
-							returnType);
-					methodBuilder.returns(streamType);
-					CodeBlock.Builder cbb = CodeBlock.builder();
-
-					String qn = rawMethodName.toUpperCase() + "_QUERY";
-					FieldSpec qf = FieldSpec
-							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . ?object a <$L>}}\"",
-									graphName.stringValue(), predicateString, otherClassString)
-							.build();
-					cb.addField(qf);
-
-					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
-					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", returnType,
-							IRI.class);
-
-					methodBuilder.addCode(cbb.build());
-//					type
-					cb.addMethod(methodBuilder.build());
+					buildClassMethodFindInstances(graphName, classBuilders, cb, predicate, otherClassPartition,
+							otherClass);
 				}
 			}
 		}
 	}
 
-	public void buildMethodsReturningLiterals(SailRepositoryConnection conn, IRI graphName,
+	/**
+	 * We need to generate a method to retrieve instances of a class.
+	 * 
+	 * @param graphName           in which the data resides
+	 * @param classBuilders       to find the return types of the other classes
+	 * @param cb                  the builder that needs the method
+	 * @param predicate           that links a class instance with the other class
+	 * @param otherClassPartition partition of the other class
+	 * @param otherClass          the other class
+	 */
+	private void buildClassMethodFindInstances(IRI graphName, Map<IRI, TypeSpec.Builder> classBuilders,
+			TypeSpec.Builder cb, Binding predicate, Binding otherClassPartition, Binding otherClass) {
+		IRI predicateIri = (IRI) predicate.getValue();
+		String predicateString = predicateIri.stringValue();
+
+		IRI otherClassString = (IRI) otherClass.getValue();
+		String rawMethodName = coreMethodName(otherClassString, predicateIri);
+		String methodName = CaseUtils.toCamelCase(rawMethodName, false, '_');
+		MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
+		methodBuilder.addModifiers(Modifier.PUBLIC);
+		TypeSpec.Builder v = classBuilders.get(otherClassPartition.getValue());
+
+		ClassName returnType = ClassName.get("", v.build().name());
+		ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnType);
+		methodBuilder.returns(streamType);
+		CodeBlock.Builder cbb = CodeBlock.builder();
+
+		// Generate a nice static final field to hold the query object.
+		String qn = rawMethodName.toUpperCase() + "_QUERY";
+		FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+				.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . ?object a <$L>}}\"",
+						graphName.stringValue(), predicateString, otherClassString)
+				.build();
+		cb.addField(qf);
+
+		cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
+		cbb.addStatement("tq.setBinding($S, id)", "id");
+
+		// First T is the type of the class in Java, the second is to make the cast from
+		// value work.
+		cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", returnType, IRI.class);
+
+		methodBuilder.addCode(cbb.build());
+//					type
+		cb.addMethod(methodBuilder.build());
+	}
+
+	/**
+	 * We need to generate a methods to retrieve any kind of literal values.
+	 * 
+	 * @param conn          to query the data
+	 * @param graphName     in which the data resides
+	 * @param classBuilders to add the methods to
+	 */
+	private void buildMethodsReturningLiterals(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT *
@@ -505,37 +623,7 @@ public class GenerateJavaFromVoID {
 					TypeSpec.Builder cb = classBuilders.get(classToAddTo.getValue());
 
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
-					IRI predicateIri = (IRI) predicate.getValue();
-					String rawMethodName = coreMethodName(datatypeB, predicateIri);
-					String methodName = CaseUtils.toCamelCase(rawMethodName, false, '_');
-//					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-//							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
-//					cb.addField(fieldBuilder);
-					String qn = rawMethodName.toUpperCase() + "_QUERY";
-					FieldSpec qf = FieldSpec
-							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer(
-									"\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(datatype(?object) = <$L>)}}\"",
-									graphName.stringValue(), predicateIri.stringValue(), datatypeB.stringValue())
-							.build();
-					cb.addField(qf);
-
-					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(methodName);
-					methodBuilder.addModifiers(Modifier.PUBLIC);
-					CodeBlock.Builder cbb = CodeBlock.builder();
-					Class<?> returnType = literalToClassMap.get(datatypeB);
-					assert returnType != null : datatypeB.stringValue() + " not found in map";
-					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qn);
-					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement(
-							"return resultToStream(tq.evaluate(), " + returnTheRightKindOfData(returnType) + ")",
-							Literal.class);
-					methodBuilder.addCode(cbb.build());
-
-					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
-							ClassName.get(returnType));
-					methodBuilder.returns(streamType);
-//					type
+					MethodSpec.Builder methodBuilder = buildClassMethodFindLiteral(graphName, predicate, datatypeB, cb);
 					cb.addMethod(methodBuilder.build());
 
 				}
@@ -543,7 +631,61 @@ public class GenerateJavaFromVoID {
 		}
 	}
 
-	protected String coreMethodName(IRI datatypeB, IRI predicateIri) {
+	/**
+	 * We need to generate a method to retrieve any kind of literal values.
+	 * 
+	 * @param graphName in which the data resides
+	 * @param predicate that links a class instance with the literal value
+	 * @param datatypeB of the field, used to generate the correct return type and
+	 *                  queries
+	 * @param cb        the builder that needs the method
+	 * @return
+	 */
+	private MethodSpec.Builder buildClassMethodFindLiteral(IRI graphName, Binding predicate, IRI datatypeB,
+			TypeSpec.Builder cb) {
+
+		IRI predicateIri = (IRI) predicate.getValue();
+		String rawMethodName = coreMethodName(datatypeB, predicateIri);
+		String methodName = CaseUtils.toCamelCase(rawMethodName, false, '_');
+
+		String qn = rawMethodName.toUpperCase() + "_QUERY";
+
+		// Generate a static query string that is referred to in the method
+		FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+				.initializer(
+						"\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(datatype(?object) = <$L>)}}\"",
+						graphName.stringValue(), predicateIri.stringValue(), datatypeB.stringValue())
+				.build();
+		cb.addField(qf);
+
+		// Build a public method that returns a stream of the correct type
+		MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(methodName);
+		methodBuilder.addModifiers(Modifier.PUBLIC);
+		CodeBlock.Builder cbb = CodeBlock.builder();
+		Class<?> returnType = literalToClassMap.get(datatypeB);
+		assert returnType != null : datatypeB.stringValue() + " not found in map";
+		cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qn);
+		cbb.addStatement("tq.setBinding($S, id)", "id");
+		cbb.addStatement("return resultToStream(tq.evaluate(), " + returnTheRightKindOfData(returnType) + ")",
+				Literal.class);
+		methodBuilder.addCode(cbb.build());
+
+		// Return type needs to be a nice Stream<String>
+		// TODO: LongStream and IntStream returns.
+		ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
+				ClassName.get(returnType));
+		methodBuilder.returns(streamType);
+		return methodBuilder;
+	}
+
+	/**
+	 * Generate a method name that is safe and won't collide.
+	 * 
+	 * @param iriOfType    iri of the class or iri of the datatype
+	 * @param predicateIri iri of the predicate
+	 * @return a method name inspired by the predicate and datatype/class
+	 */
+	protected String coreMethodName(IRI iriOfType, IRI predicateIri) {
 		String predicateString = predicateIri.getLocalName();
 		{
 			Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue)
@@ -553,10 +695,10 @@ public class GenerateJavaFromVoID {
 			}
 		}
 		String methodNamePrefix = fixJavaKeywords(predicateString.substring(predicateString.lastIndexOf('/') + 1));
-		String datatypeString = datatypeB.getLocalName();
+		String datatypeString = iriOfType.getLocalName();
 		{
 			Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue)
-					.filter((e) -> e.getName().equals(datatypeB.getNamespace())).findFirst();
+					.filter((e) -> e.getName().equals(iriOfType.getNamespace())).findFirst();
 			if (first.isPresent()) {
 				datatypeString = first.get().getPrefix() + "_" + datatypeString;
 			}
@@ -566,7 +708,14 @@ public class GenerateJavaFromVoID {
 		return methodName;
 	}
 
-	public String returnTheRightKindOfData(Class<?> returnType) {
+	/**
+	 * Knowing the datatype on the RDF/SPARQL side we now need to convert it in one
+	 * line/lambda into a Java type
+	 * 
+	 * @param returnType of the method.
+	 * @return the lambda to convert the RDF Literal into a Java
+	 */
+	private String returnTheRightKindOfData(Class<?> returnType) {
 		if (returnType == String.class) {
 			return "(v) -> (($T) v).stringValue()";
 		} else if (returnType == Integer.class) {
@@ -596,9 +745,15 @@ public class GenerateJavaFromVoID {
 		} else if (returnType == Duration.class) {
 			return "(v) -> (($T) v).object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()";
 		} else if (returnType == Year.class) {
-			return "(v) -> Year.of((($T) v).calendarValue().toGregorianCalendar().get(1))"; // 1 is the Calendar.YEAR constant
+			// 1 is the Calendar.YEAR constant, should realy use Calendar.YEAR but that is
+			// not easy
+			// because then we also need to import the type Calendar. Year is imported
+			// already because
+			// it is the return type.
+			return "(v) -> Year.of((($T) v).calendarValue().toGregorianCalendar().get(1))";
 		} else if (returnType == YearMonth.class) {
-			return "(v) -> { var cv = (($T) v).calendarValue().toGregorianCalendar(); return YearMonth.of(cv.get(1), cv.get(2)); }"; //as above but 2 is the month constant
+			// as above but 2 is the month constant.
+			return "(v) -> { var cv = (($T) v).calendarValue().toGregorianCalendar(); return YearMonth.of(cv.get(1), cv.get(2)); }";
 		} else {
 			return "($T)::stringValue";
 		}
@@ -638,17 +793,24 @@ public class GenerateJavaFromVoID {
 				Binding cIri = binding.getBinding("class");
 				String className = cIri.getValue().stringValue();
 
-				className = CaseUtils.toCamelCase(fixJavaKeywords(extract(className)),true, '_');
+				// We need to fix the class name to be a valid java class name
+				className = CaseUtils.toCamelCase(fixJavaKeywords(extract(className)), true, '_');
 
+				// Generate a java record for the class
 				TypeSpec.Builder classBuilder = TypeSpec.recordBuilder(className).addModifiers(Modifier.PUBLIC);
+				// Pass the variable identifier and a connection to the repository in which the
+				// data proxied resides.
+
+				// TODO: extract what the class represents by downloading the IRI's information
+				// and looking for rdfs:comment fields and
+				// labels.
+				classBuilder.addJavadoc("""
+						@param id of the class instance
+						@param conn connection to the backend SPARQL endpoint from which information is extracted
+						""");
 				classBuilder.recordConstructor(MethodSpec.constructorBuilder().addParameter(IRI.class, "id")
 						.addParameter(RepositoryConnection.class, "conn").build());
-//				FieldSpec graphField = FieldSpec
-//						.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-//						.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class,
-//								graphName.stringValue())
-//						.build();
-//				classBuilder.addField(graphField);
+
 				IRI classIri = (IRI) binding.getBinding("classPartition").getValue();
 				classBuilders.put(classIri, classBuilder);
 			}
@@ -657,6 +819,13 @@ public class GenerateJavaFromVoID {
 
 	}
 
+	/**
+	 * Extract a valid java method name for an iri/path
+	 * 
+	 * @param path the iri to extract the method name from
+	 * @return a valid java method name that is close to the original iri, hopefully
+	 *         using a namespace prefix
+	 */
 	String extract(String path) {
 		try (Stream<Namespace> stream = ns.values().stream()) {
 			Optional<Namespace> any = stream.filter(ns -> {
@@ -664,7 +833,7 @@ public class GenerateJavaFromVoID {
 			}).findAny();
 			if (any.isPresent()) {
 				Namespace ns = any.get();
-				return ns.getPrefix()+'_' + path.substring(ns.getName().length()).replace('.', '_');
+				return ns.getPrefix() + '_' + path.substring(ns.getName().length()).replace('.', '_');
 			} else {
 				// If there is no namespace, return the last part to have higher chance of
 				// having a good class name.
@@ -673,6 +842,17 @@ public class GenerateJavaFromVoID {
 		}
 	}
 
+	/**
+	 * This method builds a class that represents a graph. This will have the basic
+	 * search classes
+	 * 
+	 * @param outputDirectory where to write the java file
+	 * @param name            of the class
+	 * @param packageName     name for the package
+	 * @param resource        the IRI of the named graph
+	 * @param conn            to extract more data from the VoID file
+	 * @throws IOException if we can't write the file
+	 */
 	private void buildClassForAGraph(File outputDirectory, String name, String packageName, IRI resource,
 			RepositoryConnection conn) throws IOException {
 		TypeSpec.Builder graphC = TypeSpec.recordBuilder(name).addModifiers(Modifier.PUBLIC);
@@ -683,13 +863,23 @@ public class GenerateJavaFromVoID {
 		javaFile.build().writeTo(outputDirectory);
 	}
 
+	/**
+	 * Generate a record class for the Graph, this record class will have methods to
+	 * get all the classes in the graph
+	 * 
+	 * @param graphC    the builder for the class code
+	 * @param graphName IRI of the graph
+	 * @param conn      to extract more data from the VoID file
+	 */
 	private void buildClassFindMethodsForAGraph(TypeSpec.Builder graphC, IRI graphName, RepositoryConnection conn) {
-		graphC.recordConstructor(
-				MethodSpec.constructorBuilder().addParameter(RepositoryConnection.class, "conn").build());
-//				FieldSpec.builder(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL).build());
-//		graphC.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
-//				.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn")
-//				.build());
+		// This constructor method has just one parameter, the connection to the
+		// repository
+		MethodSpec constructorAcceptingConnection = MethodSpec.constructorBuilder()
+				.addParameter(RepositoryConnection.class, "conn").build();
+		graphC.recordConstructor(constructorAcceptingConnection);
+
+		// For each class in the graph we will generate a method that returns a stream
+		// of all instances of that class
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT ?classPartition ?class
 				WHERE {
@@ -702,30 +892,56 @@ public class GenerateJavaFromVoID {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Binding cIri = bs.getBinding("class");
-				String rawClassName = fixJavaKeywords(extract(cIri.getValue().stringValue()));
-				String className = CaseUtils.toCamelCase(rawClassName ,true, '_');
-				ClassName type = ClassName.get("", className);
-				ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
-				MethodSpec.Builder mb = MethodSpec.methodBuilder("all" + className).returns(returnType)
-						.addModifiers(Modifier.PUBLIC);
 
-				String qn = ("all_" + rawClassName + "_query").toUpperCase();
-				FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-						.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> }}\"",
-								graphName.stringValue(), cIri.getValue().stringValue())
-						.build();
-				graphC.addField(qf);
-				CodeBlock.Builder cbb = CodeBlock.builder();
-				cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
-				cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type, IRI.class);
-
-				mb.addCode(cbb.build());
-				graphC.addMethod(mb.build());
-
+				buildFindAllInstancesOfAClass(graphC, graphName, cIri.getValue().stringValue());
 			}
 		}
 	}
 
+	/**
+	 * Generate finder methods to list all instances of a class in the graph
+	 * 
+	 * @param graphC    the class builder
+	 * @param graphName used in the constant query
+	 * @param cIri      the iri of the class to find as a string
+	 */
+	private void buildFindAllInstancesOfAClass(TypeSpec.Builder graphC, IRI graphName, String cIri) {
+		// We need to fix the class name to be a valid java class name, but for now we
+		// want it snakecase for the constant field.
+		String rawClassName = fixJavaKeywords(extract(cIri));
+		// But in camelCase for the Type/Class names
+		String className = CaseUtils.toCamelCase(rawClassName, true, '_');
+		ClassName type = ClassName.get("", className);
+		// We generate a Stream<T> where T is the className we just got.
+		ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
+		MethodSpec.Builder mb = MethodSpec.methodBuilder("all" + className).returns(returnType)
+				.addModifiers(Modifier.PUBLIC);
+
+		// We generate a constant field for the query string. Makes it easier to read.
+		String qn = ("ALL_" + rawClassName.toUpperCase() + "_QUERY");
+		// TODO: find out how to generate multiline strings in JavaPoet as this does not
+		// read nicely
+		FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+				.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> }}\"", graphName.stringValue(), cIri)
+				.build();
+		graphC.addField(qf);
+		CodeBlock.Builder cbb = CodeBlock.builder();
+		// Run the query and return the stream of instances
+		cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
+		// Important this order of constuctor parameters must match the order generated
+		// later
+		cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type, IRI.class);
+
+		mb.addCode(cbb.build());
+		graphC.addMethod(mb.build());
+	}
+
+	/**
+	 * Try to generate a reasonable package name from the URI. This is not perfect!
+	 * 
+	 * @param uri of the namedgraph
+	 * @return a valid package name
+	 */
 	StringBuilder getPackageName(URI uri) {
 		StringBuilder packageName = new StringBuilder();
 		if (uri.getHost() != null) {
@@ -752,6 +968,13 @@ public class GenerateJavaFromVoID {
 		return packageName;
 	}
 
+	/**
+	 * We can't have java classes with names that are not valid java identifiers.
+	 * This is to escape the keywords.
+	 * 
+	 * @param raw
+	 * @return a prefixed keyword which should avoid the issue.
+	 */
 	private String fixJavaKeywords(String raw) {
 
 		String string = raw.replace('-', '_').replace('#', '_');
