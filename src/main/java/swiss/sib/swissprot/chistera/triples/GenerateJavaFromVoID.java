@@ -290,12 +290,12 @@ public class GenerateJavaFromVoID {
 	}
 
 	protected void addDefaultNamespaces() {
-		for (Class<?> v : List.of(AFN.class, APF.class, CONFIG.class, DASH.class, DC.class, DCTERMS.class,
-				DOAP.class, EARL.class, FN.class, FOAF.class, GEO.class, GEOF.class, HYDRA.class, LDP.class,
-				LIST.class, LOCN.class, ODRL2.class, ORG.class, OWL.class, PROV.class, RDF.class, RDFS.class,
-				ROV.class, RSX.class, SD.class, SESAME.class, SESAMEQNAME.class, SHACL.class, SKOS.class,
-				SKOSXL.class, SP.class, SPIF.class, SPIN.class, SPINX.class, SPL.class, TIME.class, VANN.class,
-				VCARD4.class, VOID.class, WGS84.class, XSD.class)) {
+		for (Class<?> v : List.of(AFN.class, APF.class, CONFIG.class, DASH.class, DC.class, DCTERMS.class, DOAP.class,
+				EARL.class, FN.class, FOAF.class, GEO.class, GEOF.class, HYDRA.class, LDP.class, LIST.class, LOCN.class,
+				ODRL2.class, ORG.class, OWL.class, PROV.class, RDF.class, RDFS.class, ROV.class, RSX.class, SD.class,
+				SESAME.class, SESAMEQNAME.class, SHACL.class, SKOS.class, SKOSXL.class, SP.class, SPIF.class,
+				SPIN.class, SPINX.class, SPL.class, TIME.class, VANN.class, VCARD4.class, VOID.class, WGS84.class,
+				XSD.class)) {
 			try {
 				String prefix = (String) v.getField("PREFIX").get(null);
 				Object rns = v.getField("NAMESPACE").get(null);
@@ -307,8 +307,7 @@ public class GenerateJavaFromVoID {
 					String namespace = (String) v.getField("NAMESPACE").get(null);
 					ns.putIfAbsent(prefix, new SimpleNamespace(prefix, namespace));
 				}
-			} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException
-					| SecurityException e) {
+			} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException | SecurityException e) {
 				System.err.println("Failed to get prefix and namespace for " + v.getName());
 			}
 		}
@@ -491,7 +490,8 @@ public class GenerateJavaFromVoID {
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					IRI predicateIri = (IRI) predicate.getValue();
 					String predicateString = predicateIri.getLocalName();
-					Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue).filter((e) -> e.getName().equals(predicateIri.getNamespace())).findFirst();
+					Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue)
+							.filter((e) -> e.getName().equals(predicateIri.getNamespace())).findFirst();
 					if (first.isPresent()) {
 						predicateString = first.get().getPrefix() + "_" + predicateString;
 					}

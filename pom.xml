@@ -5,7 +5,7 @@
   <artifactId>VoID2Java</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <properties>
-    <rdf4j.version>4.3.11</rdf4j.version>
+    <rdf4j.version>5.0.2</rdf4j.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <picocli.version>4.7.6</picocli.version>
     <junit.version>5.11.0</junit.version>
