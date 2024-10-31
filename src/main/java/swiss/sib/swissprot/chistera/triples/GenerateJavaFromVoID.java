@@ -447,7 +447,8 @@ public class GenerateJavaFromVoID {
 					String predicateString = predicateIri.stringValue();
 
 					IRI otherClassString = (IRI) otherClass.getValue();
-					String methodName = CaseUtils.toCamelCase(coreMethodName(otherClassString, predicateIri), false, '_');
+					String rawMethodName = coreMethodName(otherClassString, predicateIri);
+					String methodName = CaseUtils.toCamelCase(rawMethodName, false, '_');
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					TypeSpec.Builder v = classBuilders.get(otherClassPartition.getValue());
@@ -458,7 +459,7 @@ public class GenerateJavaFromVoID {
 					methodBuilder.returns(streamType);
 					CodeBlock.Builder cbb = CodeBlock.builder();
 
-					String qn = methodName.toUpperCase() + "_QUERY";
+					String qn = rawMethodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . ?object a <$L>}}\"",
@@ -505,11 +506,12 @@ public class GenerateJavaFromVoID {
 
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					IRI predicateIri = (IRI) predicate.getValue();
-					String methodName = CaseUtils.toCamelCase(coreMethodName(datatypeB, predicateIri), false, '_');
+					String rawMethodName = coreMethodName(datatypeB, predicateIri);
+					String methodName = CaseUtils.toCamelCase(rawMethodName, false, '_');
 //					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 //							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					cb.addField(fieldBuilder);
-					String qn = methodName.toUpperCase() + "_QUERY";
+					String qn = rawMethodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 							.initializer(
@@ -700,13 +702,14 @@ public class GenerateJavaFromVoID {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Binding cIri = bs.getBinding("class");
-				String className = CaseUtils.toCamelCase(fixJavaKeywords(extract(cIri.getValue().stringValue())) ,true, '_');
+				String rawClassName = fixJavaKeywords(extract(cIri.getValue().stringValue()));
+				String className = CaseUtils.toCamelCase(rawClassName ,true, '_');
 				ClassName type = ClassName.get("", className);
 				ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
 				MethodSpec.Builder mb = MethodSpec.methodBuilder("all" + className).returns(returnType)
 						.addModifiers(Modifier.PUBLIC);
 
-				String qn = "all_" + className + "_query";
+				String qn = ("all_" + rawClassName + "_query").toUpperCase();
 				FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 						.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> }}\"",
 								graphName.stringValue(), cIri.getValue().stringValue())
