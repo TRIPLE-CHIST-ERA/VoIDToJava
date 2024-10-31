@@ -376,19 +376,38 @@ public class GenerateJavaFromVoID {
 
 	private void buildMethodsOnTypesInAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName, Map<IRI, TypeSpec.Builder> classBuilders) {
-		buildIdField(conn, graphName, classBuilders);
+//		buildIdField(conn, graphName, classBuilders);
+		buildClassEquals(conn, graphName, classBuilders);
+		buildClassHashCode(conn, graphName, classBuilders);
 		buildMethodsReturningObjects(conn, graphName, classBuilders);
 		buildMethodsReturningLiterals(conn, graphName, classBuilders);
 	}
 
-	private void buildIdField(SailRepositoryConnection conn, IRI graphName, Map<IRI, TypeSpec.Builder> classBuilders) {
+	private void buildClassEquals(SailRepositoryConnection conn, IRI graphName,
+			Map<IRI, TypeSpec.Builder> classBuilders) {
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			TypeSpec.Builder cb = en.getValue();
-			cb.addField(IRI.class, "id", Modifier.PRIVATE, Modifier.FINAL);
-			cb.addField(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL);
-			cb.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
-					.addParameter(IRI.class, "id", Modifier.FINAL).addStatement("this.id = id")
-					.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn")
+
+			ClassName returnType = ClassName.get("", cb.build().name());
+			CodeBlock.Builder cbb = CodeBlock.builder();
+			cbb.beginControlFlow("if (this == other)").addStatement("return true").endControlFlow()
+					.beginControlFlow("else if (other instanceof $T t)", returnType).addStatement("return id.equals(t.id)")
+					.endControlFlow()
+					.addStatement("return false");
+
+			cb.addMethod(MethodSpec.methodBuilder("equals").addModifiers(Modifier.PUBLIC)
+					.addParameter(Object.class, "other", Modifier.FINAL).addCode(cbb.build()).returns(boolean.class)
+					.build());
+		}
+	}
+	
+	private void buildClassHashCode(SailRepositoryConnection conn, IRI graphName,
+			Map<IRI, TypeSpec.Builder> classBuilders) {
+		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
+			TypeSpec.Builder cb = en.getValue();
+
+			cb.addMethod(MethodSpec.methodBuilder("hashCode").addModifiers(Modifier.PUBLIC)
+					.addStatement("return id.hashCode()").returns(int.class)
 					.build());
 		}
 	}
@@ -426,7 +445,8 @@ public class GenerateJavaFromVoID {
 					IRI predicateIri = (IRI) predicate.getValue();
 					String predicateString = predicateIri.stringValue();
 
-					String methodName = coreMethodName((IRI) otherClass.getValue(), predicateIri);
+					IRI otherClassString = (IRI) otherClass.getValue();
+					String methodName = coreMethodName(otherClassString, predicateIri);
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					TypeSpec.Builder v = classBuilders.get(otherClassPartition.getValue());
@@ -440,9 +460,8 @@ public class GenerateJavaFromVoID {
 					String qn = methodName.toUpperCase() + "_QUERY";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
-							.initializer(
-									"\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . FILTER(isIRI(?object))}}\"",
-									graphName.stringValue(), predicateString)
+							.initializer("\"SELECT ?object WHERE { GRAPH <$L> { ?id <$L> ?object . ?object a <$L>}}\"",
+									graphName.stringValue(), predicateString, otherClassString)
 							.build();
 					cb.addField(qf);
 
@@ -574,9 +593,9 @@ public class GenerateJavaFromVoID {
 		} else if (returnType == Duration.class) {
 			return "(v) -> (($T) v).object.getValue().calendarValue().toGregorianCalendar().toZonedDateTime().toInstant().toEpochMilli()";
 		} else if (returnType == Year.class) {
-			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
+			return "(v) -> Year.of((($T) v).calendarValue().toGregorianCalendar().get(1))"; // 1 is the Calendar.YEAR constant
 		} else if (returnType == YearMonth.class) {
-			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
+			return "(v) -> { var cv = (($T) v).calendarValue().toGregorianCalendar(); return YearMonth.of(cv.get(1), cv.get(2)); }"; //as above but 2 is the month constant
 		} else {
 			return "($T)::stringValue";
 		}
@@ -618,8 +637,9 @@ public class GenerateJavaFromVoID {
 
 				className = fixJavaKeywords(extract(className));
 
-				TypeSpec.Builder classBuilder = TypeSpec.classBuilder(className).addModifiers(Modifier.PUBLIC,
-						Modifier.FINAL);
+				TypeSpec.Builder classBuilder = TypeSpec.recordBuilder(className).addModifiers(Modifier.PUBLIC);
+				classBuilder.recordConstructor(MethodSpec.constructorBuilder().addParameter(IRI.class, "id")
+						.addParameter(RepositoryConnection.class, "conn").build());
 //				FieldSpec graphField = FieldSpec
 //						.builder(IRI.class, "graph", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 //						.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class,
@@ -652,7 +672,7 @@ public class GenerateJavaFromVoID {
 
 	private void buildClassForAGraph(File outputDirectory, String name, String packageName, IRI resource,
 			RepositoryConnection conn) throws IOException {
-		TypeSpec.Builder graphC = TypeSpec.classBuilder(name).addModifiers(Modifier.PUBLIC, Modifier.FINAL);
+		TypeSpec.Builder graphC = TypeSpec.recordBuilder(name).addModifiers(Modifier.PUBLIC);
 
 		buildClassFindMethodsForAGraph(graphC, resource, conn);
 		JavaFile.Builder javaFile = JavaFile.builder(packageName, graphC.build());
@@ -661,11 +681,12 @@ public class GenerateJavaFromVoID {
 	}
 
 	private void buildClassFindMethodsForAGraph(TypeSpec.Builder graphC, IRI graphName, RepositoryConnection conn) {
-		graphC.addField(
-				FieldSpec.builder(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL).build());
-		graphC.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
-				.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn")
-				.build());
+		graphC.recordConstructor(
+				MethodSpec.constructorBuilder().addParameter(RepositoryConnection.class, "conn").build());
+//				FieldSpec.builder(RepositoryConnection.class, "conn", Modifier.PRIVATE, Modifier.FINAL).build());
+//		graphC.addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
+//				.addParameter(RepositoryConnection.class, "conn", Modifier.FINAL).addStatement("this.conn = conn")
+//				.build());
 		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
 				SELECT ?classPartition ?class
 				WHERE {
