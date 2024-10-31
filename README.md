@@ -8,7 +8,14 @@ and generate matching documented java code to access such data.
 
 # STATUS
 
-Extremely early and non functional code.
+Extremely early code. Still a lot to do, but one can test it out now as we have valid java code that runs the right kind of SPARQL queries.
+
+# GOAL
+
+Imagine a small team, presenting a small open research dataset to the world. They might have some capabilities in their team to make 
+a website, a rest API in one language. But certainly not all the languages. The code in this repository shows how people could access
+this valuable data without learning SPARQL, in this case the people would be in the java community. However, the ideas here are an example
+for other ecosystems.
 
 # Use
 
