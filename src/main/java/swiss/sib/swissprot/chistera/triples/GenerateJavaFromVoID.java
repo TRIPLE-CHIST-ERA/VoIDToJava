@@ -14,11 +14,14 @@ import java.time.Year;
 import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.lang.model.element.Modifier;
@@ -29,6 +32,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.APF;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
@@ -99,7 +103,7 @@ import com.palantir.javapoet.TypeVariableName;
 
 public class GenerateJavaFromVoID {
 
-	//TODO: move to an external file and read it in.
+	// TODO: move to an external file and read it in.
 	private static final String POM_TEMPLATE = """
 			<?xml version="1.0" encoding="UTF-8"?>
 			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -240,6 +244,17 @@ public class GenerateJavaFromVoID {
 			PREFIX void: <http://rdfs.org/ns/void#>
 			PREFIX void_ext: <http://ldf.fi/void-ext#>
 			PREFIX sd:<http://www.w3.org/ns/sparql-service-description#>
+			""";
+	private static final String FIND_DATATYPE_PARTITIONS = PREFIXES + """
+			SELECT *
+			WHERE {
+			  ?graph sd:graph/void:classPartition ?classPartition .
+			  ?classPartition void:class ?classType .
+			  ?classPartition void:propertyPartition ?predicatePartition .
+			  ?predicatePartition void:property ?predicate .
+			  ?predicatePartition void_ext:datatypePartition ?datatypePartition .
+			  ?datatypePartition void_ext:datatype ?datatype .
+			}
 			""";
 
 	private static final String FIND_ALL_NAMED_GRAPHS = PREFIXES + """
@@ -600,17 +615,7 @@ public class GenerateJavaFromVoID {
 	 */
 	private void buildMethodsReturningLiterals(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
-		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-				SELECT *
-				WHERE {
-				  ?graph sd:graph/void:classPartition ?classPartition .
-				  ?classPartition void:class ?classType .
-				  ?classPartition void:propertyPartition ?predicatePartition .
-				  ?predicatePartition void:property ?predicate .
-				  ?predicatePartition void_ext:datatypePartition ?datatypePartition .
-				  ?datatypePartition void_ext:datatype ?datatype .
-				}
-				""");
+		TupleQuery tq = conn.prepareTupleQuery(FIND_DATATYPE_PARTITIONS);
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			tq.setBinding("graph", graphName);
 			tq.setBinding("classPartition", en.getKey());
@@ -894,6 +899,7 @@ public class GenerateJavaFromVoID {
 				Binding cIri = bs.getBinding("class");
 
 				buildFindAllInstancesOfAClass(graphC, graphName, cIri.getValue().stringValue());
+				buildFindAllInstancesOfAClassByString(graphC, graphName, (IRI) cIri.getValue(), cIri.getValue().stringValue(), conn);
 			}
 		}
 	}
@@ -934,6 +940,68 @@ public class GenerateJavaFromVoID {
 
 		mb.addCode(cbb.build());
 		graphC.addMethod(mb.build());
+	}
+
+	/*
+	 * Generate finder methods to list all instances of a class in the graph for a
+	 * string. i.e. poor mans free text search
+	 * 
+	 * @param graphC the class builder
+	 * 
+	 * @param graphName used in the constant query
+	 * 
+	 * @param cIri the iri of the class to find as a string
+	 */
+	private void buildFindAllInstancesOfAClassByString(TypeSpec.Builder graphC, IRI graphName, IRI iri, String cIri, RepositoryConnection conn) {
+		// We need to fix the class name to be a valid java class name, but for now we
+		// want it snakecase for the constant field.
+		String rawClassName = fixJavaKeywords(extract(cIri));
+		// But in camelCase for the Type/Class names
+		String className = CaseUtils.toCamelCase(rawClassName, true, '_');
+		ClassName type = ClassName.get("", className);
+		// We generate a Stream<T> where T is the className we just got.
+		ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
+		MethodSpec.Builder mb = MethodSpec.methodBuilder("search" + className).returns(returnType)
+				.addParameter(String.class, "searchFor")
+				.addModifiers(Modifier.PUBLIC);
+
+		// We generate a constant field for the query string. Makes it easier to read.
+		String qn = ("FREETEXT_" + rawClassName.toUpperCase() + "_QUERY");
+		// TODO: find out how to generate multiline strings in JavaPoet as this does not
+		// read nicely
+		String queryWithoutValues = "\"SELECT ?object WHERE { GRAPH <$L> { ?object a <$L> ; ?predicate ?literal . FILTER(contains(lcase(?literal), ?searchFor )}} VALUES ?predicate {";
+		Set<String> predicates = new HashSet<>();
+		TupleQuery tq = conn.prepareTupleQuery(FIND_DATATYPE_PARTITIONS);
+		tq.setBinding("classType", iri);
+		tq.setBinding("graph", graphName);
+		try (TupleQueryResult r = tq.evaluate()) {
+			while (r.hasNext()) {
+				BindingSet bs = r.next();
+				IRI predicate = (IRI) bs.getBinding("predicate").getValue();
+				predicates.add('<' + predicate.stringValue() + '>');
+			}
+		}
+		//If we did not find a literal field to search in don't add a fake method that won't work
+		if (! predicates.isEmpty()) {
+			queryWithoutValues += predicates.stream().collect(Collectors.joining(" "));
+			queryWithoutValues += "}\"";
+			FieldSpec qf = FieldSpec.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+					.initializer(queryWithoutValues,
+							graphName.stringValue(), cIri)
+					.build();
+			graphC.addField(qf);
+			CodeBlock.Builder cbb = CodeBlock.builder();
+			// Run the query and return the stream of instances
+			cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
+			cbb.addStatement("tq.setBinding(\"searchFor\", $T.getInstance().createLiteral(searchFor.toLowerCase()))", SimpleValueFactory.class);
+			// Important this order of constuctor parameters must match the order generated
+			// later
+			cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type, IRI.class);
+	
+			mb.addCode(cbb.build());
+			
+			graphC.addMethod(mb.build());
+		}
 	}
 
 	/**
