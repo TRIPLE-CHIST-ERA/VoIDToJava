@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
@@ -21,7 +22,8 @@ public class GenerateJavaFromVoIDTest {
 	@Test
 	public void testTutorial() throws IOException {
 		GenerateJavaFromVoID generate = new GenerateJavaFromVoID();
-		generate.convert(GenerateJavaFromVoID.class.getResourceAsStream("/tutorial.ttl"), tempDir);
+		URL resource = GenerateJavaFromVoID.class.getResource("/tutorial.ttl");
+		generate.convert(new File(resource.getPath()), tempDir);
 		try (Stream<Path> list = Files.list(tempDir.toPath())) {
 			assertTrue(list.findAny().isPresent());
 		}

@@ -2,10 +2,8 @@ package swiss.sib.swissprot.chistera.triples;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,8 +26,49 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.base.CoreDatatype.RDF;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.util.Vocabularies;
+import org.eclipse.rdf4j.model.vocabulary.AFN;
+import org.eclipse.rdf4j.model.vocabulary.APF;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
+import org.eclipse.rdf4j.model.vocabulary.DOAP;
+import org.eclipse.rdf4j.model.vocabulary.EARL;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.GEO;
+import org.eclipse.rdf4j.model.vocabulary.GEOF;
+import org.eclipse.rdf4j.model.vocabulary.HYDRA;
+import org.eclipse.rdf4j.model.vocabulary.LDP;
+import org.eclipse.rdf4j.model.vocabulary.LIST;
+import org.eclipse.rdf4j.model.vocabulary.LOCN;
+import org.eclipse.rdf4j.model.vocabulary.ODRL2;
+import org.eclipse.rdf4j.model.vocabulary.ORG;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
+import org.eclipse.rdf4j.model.vocabulary.PROV;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.ROV;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
+import org.eclipse.rdf4j.model.vocabulary.SD;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.model.vocabulary.SESAMEQNAME;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.model.vocabulary.SKOS;
+import org.eclipse.rdf4j.model.vocabulary.SKOSXL;
+import org.eclipse.rdf4j.model.vocabulary.SP;
+import org.eclipse.rdf4j.model.vocabulary.SPIF;
+import org.eclipse.rdf4j.model.vocabulary.SPIN;
+import org.eclipse.rdf4j.model.vocabulary.SPINX;
+import org.eclipse.rdf4j.model.vocabulary.SPL;
+import org.eclipse.rdf4j.model.vocabulary.TIME;
+import org.eclipse.rdf4j.model.vocabulary.VANN;
+import org.eclipse.rdf4j.model.vocabulary.VCARD4;
+import org.eclipse.rdf4j.model.vocabulary.VOID;
+import org.eclipse.rdf4j.model.vocabulary.WGS84;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -43,6 +82,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import com.palantir.javapoet.ClassName;
@@ -213,20 +253,23 @@ public class GenerateJavaFromVoID {
 	public static void main(String[] args) {
 		String input = args[0];
 		String output = args[1];
-		try (InputStream inputVoid = Files.newInputStream(Path.of(input))) {
-			new GenerateJavaFromVoID().convert(inputVoid, new File(output));
+
+		try {
+			new GenerateJavaFromVoID().convert(new File(input), new File(output));
 		} catch (RDFParseException | RepositoryException | IOException e) {
+			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+
 	}
 
-	public void convert(InputStream inputVoid, File outputDirectory)
+	public void convert(File inputVoid, File outputDirectory)
 			throws RDFParseException, RepositoryException, IOException {
 		SailRepository ms = new SailRepository(new MemoryStore());
 		ms.init();
 		try (SailRepositoryConnection conn = ms.getConnection()) {
 			conn.begin();
-			conn.add(inputVoid, RDFFormat.TURTLE);
+			conn.add(inputVoid, Rio.getParserFormatForFileName(inputVoid.getName()).orElse(RDFFormat.TURTLE));
 			conn.commit();
 
 		}
@@ -236,6 +279,7 @@ public class GenerateJavaFromVoID {
 			try (Stream<Namespace> s = namespaces.stream()) {
 				s.forEach((n) -> ns.put(n.getName(), n));
 			}
+			addDefaultNamespaces();
 		}
 		File sourceDir = new File(outputDirectory, "src/main/java/");
 		sourceDir.mkdirs();
@@ -243,6 +287,31 @@ public class GenerateJavaFromVoID {
 		makePackages(ms, sourceDir);
 		makePom(outputDirectory);
 		ms.shutDown();
+	}
+
+	protected void addDefaultNamespaces() {
+		for (Class<?> v : List.of(AFN.class, APF.class, CONFIG.class, DASH.class, DC.class, DCTERMS.class,
+				DOAP.class, EARL.class, FN.class, FOAF.class, GEO.class, GEOF.class, HYDRA.class, LDP.class,
+				LIST.class, LOCN.class, ODRL2.class, ORG.class, OWL.class, PROV.class, RDF.class, RDFS.class,
+				ROV.class, RSX.class, SD.class, SESAME.class, SESAMEQNAME.class, SHACL.class, SKOS.class,
+				SKOSXL.class, SP.class, SPIF.class, SPIN.class, SPINX.class, SPL.class, TIME.class, VANN.class,
+				VCARD4.class, VOID.class, WGS84.class, XSD.class)) {
+			try {
+				String prefix = (String) v.getField("PREFIX").get(null);
+				Object rns = v.getField("NAMESPACE").get(null);
+				if (rns instanceof String namespace) {
+					ns.putIfAbsent(prefix, new SimpleNamespace(prefix, namespace));
+				} else if (rns instanceof Namespace namespace) {
+					ns.putIfAbsent(prefix, namespace);
+				} else {
+					String namespace = (String) v.getField("NAMESPACE").get(null);
+					ns.putIfAbsent(prefix, new SimpleNamespace(prefix, namespace));
+				}
+			} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException
+					| SecurityException e) {
+				System.err.println("Failed to get prefix and namespace for " + v.getName());
+			}
+		}
 	}
 
 	private void makePom(File outputDirectory) throws IOException {
@@ -420,7 +489,12 @@ public class GenerateJavaFromVoID {
 					TypeSpec.Builder cb = classBuilders.get(classToAddTo.getValue());
 
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
-					String predicateString = predicate.getValue().stringValue();
+					IRI predicateIri = (IRI) predicate.getValue();
+					String predicateString = predicateIri.getLocalName();
+					Optional<Namespace> first = ns.entrySet().stream().map(Entry::getValue).filter((e) -> e.getName().equals(predicateIri.getNamespace())).findFirst();
+					if (first.isPresent()) {
+						predicateString = first.get().getPrefix() + "_" + predicateString;
+					}
 					String methodNamePrefix = fixJavaKeywords(
 							predicateString.substring(predicateString.lastIndexOf('/') + 1));
 					String datatypeString = datatypeB.stringValue();
@@ -512,8 +586,8 @@ public class GenerateJavaFromVoID {
 			Map.entry(XSD.GYEARMONTH, YearMonth.class), Map.entry(XSD.LONG, Long.class),
 			Map.entry(XSD.NEGATIVE_INTEGER, Integer.class), Map.entry(XSD.NON_NEGATIVE_INTEGER, Integer.class),
 			Map.entry(XSD.NON_POSITIVE_INTEGER, Integer.class), Map.entry(XSD.POSITIVE_INTEGER, Integer.class),
-			Map.entry(XSD.SHORT, Short.class), Map.entry(RDF.LANGSTRING.getIri(), String.class),
-			Map.entry(RDF.HTML.getIri(), String.class));
+			Map.entry(XSD.SHORT, Short.class), Map.entry(RDF.LANGSTRING, String.class),
+			Map.entry(RDF.HTML, String.class));
 
 	private Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
