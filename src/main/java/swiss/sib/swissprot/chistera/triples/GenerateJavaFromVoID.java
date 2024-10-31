@@ -25,6 +25,7 @@ import java.util.stream.Stream;
 import javax.lang.model.element.Modifier;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype.RDF;
@@ -62,6 +63,12 @@ public class GenerateJavaFromVoID {
 			<?xml version="1.0" encoding="UTF-8"?>
 			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 			  <modelVersion>4.0.0</modelVersion>
+			  <parent>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-starter-parent</artifactId>
+				<version>3.3.5</version>
+				<relativePath/>
+			  </parent>
 			  <groupId>${groupId}</groupId>
 			  <artifactId>${artifactId}</artifactId>
 			  <version>${version}</version>
@@ -153,6 +160,10 @@ public class GenerateJavaFromVoID {
 			        <artifactId>maven-site-plugin</artifactId>
 			        <version>3.7.1</version>
 			      </plugin>
+			      <plugin>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-maven-plugin</artifactId>
+				  </plugin>
 			    </plugins>
 			  </build>
 			  <reporting>
@@ -260,7 +271,9 @@ public class GenerateJavaFromVoID {
 		ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), returnTypeBound);
 
 		mb.returns(returnType);
-		mb.addStatement("return result.stream().map((bs) -> bs.getBinding(\"object\")).map($T::getValue).map(transformer)", Binding.class);
+		mb.addStatement(
+				"return result.stream().map((bs) -> bs.getBinding(\"object\")).map($T::getValue).map(transformer)",
+				Binding.class);
 
 		b.addMethod(mb.build());
 		JavaFile javaFile = JavaFile.builder(UTIL_PACKAGE, b.build()).build();
@@ -329,8 +342,8 @@ public class GenerateJavaFromVoID {
 				  	 void:subset ?graph .
 				}
 				""");
-		tq.setBinding("graph", graphName);
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
+			tq.setBinding("graph", graphName);
 			tq.setBinding("classPartition", en.getKey());
 			TypeSpec.Builder cb = classBuilders.get(en.getKey());
 
@@ -371,8 +384,8 @@ public class GenerateJavaFromVoID {
 
 					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
 					cbb.addStatement("tq.setBinding($S, id)", "id");
-					cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))",
-							returnType, IRI.class);
+					cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", returnType,
+							IRI.class);
 
 					methodBuilder.addCode(cbb.build());
 //					type
@@ -395,8 +408,8 @@ public class GenerateJavaFromVoID {
 				  ?datatypePartition void_ext:datatype ?datatype .
 				}
 				""");
-		tq.setBinding("graph", graphName);
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
+			tq.setBinding("graph", graphName);
 			tq.setBinding("classPartition", en.getKey());
 			try (TupleQueryResult tqr = tq.evaluate()) {
 				while (tqr.hasNext()) {
@@ -408,13 +421,15 @@ public class GenerateJavaFromVoID {
 
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					String predicateString = predicate.getValue().stringValue();
-					String methodName = fixJavaKeywords(
+					String methodNamePrefix = fixJavaKeywords(
 							predicateString.substring(predicateString.lastIndexOf('/') + 1));
-
+					String datatypeString = datatypeB.stringValue();
+					String methodNamePostFix = fixJavaKeywords(
+							datatypeString.substring(datatypeString.lastIndexOf('#') + 1));
 //					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 //							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					cb.addField(fieldBuilder);
-
+					String methodName = methodNamePrefix + "_" + methodNamePostFix;
 					String qn = methodName + "_query";
 					FieldSpec qf = FieldSpec
 							.builder(String.class, qn, Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
@@ -428,10 +443,12 @@ public class GenerateJavaFromVoID {
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					CodeBlock.Builder cbb = CodeBlock.builder();
 					Class<?> returnType = literalToClassMap.get(datatypeB);
+					assert returnType != null : datatypeB.stringValue() + " not found in map";
 					cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qn);
 					cbb.addStatement("tq.setBinding($S, id)", "id");
 					cbb.addStatement(
-							"return resultToStream(tq.evaluate(), " + returnTheRightKindOfData(returnType) + ")", Value.class);
+							"return resultToStream(tq.evaluate(), " + returnTheRightKindOfData(returnType) + ")",
+							Literal.class);
 					methodBuilder.addCode(cbb.build());
 
 					ParameterizedTypeName streamType = ParameterizedTypeName.get(ClassName.get(Stream.class),
@@ -447,23 +464,23 @@ public class GenerateJavaFromVoID {
 
 	public String returnTheRightKindOfData(Class<?> returnType) {
 		if (returnType == String.class) {
-			return "$T::stringValue";
+			return "(v) -> (($T) v).stringValue()";
 		} else if (returnType == Integer.class) {
-			return "$T::integerValue";
+			return "(v) -> (($T) v).integerValue()";
 		} else if (returnType == Boolean.class) {
-			return "$T::booleanValue";
+			return "(v) -> (($T) v).booleanValue()";
 		} else if (returnType == Double.class) {
-			return "$T::doubleValue";
+			return "(v) -> (($T) v).doubleValue()";
 		} else if (returnType == Float.class) {
-			return "$T::floatValue";
+			return "(v) -> (($T) v).floatValue()";
 		} else if (returnType == Short.class) {
-			return "$T::shortValue";
+			return "(v) -> (($T) v).shortValue()";
 		} else if (returnType == Long.class) {
-			return "$T::longValue";
+			return "(v) -> (($T) v).longValue()";
 		} else if (returnType == Byte.class) {
-			return "$T::byteValue";
+			return "(v) -> (($T) v).byteValue()";
 		} else if (returnType == URI.class) {
-			return "$T::uriValue";
+			return "(v) -> (($T) v).uriValue()";
 		} else if (returnType == LocalDate.class) {
 			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate()";
 		} else if (returnType == LocalDateTime.class) {
@@ -477,7 +494,7 @@ public class GenerateJavaFromVoID {
 		} else if (returnType == YearMonth.class) {
 			return "(v) -> (($T) v).calendarValue().toGregorianCalendar().toZonedDateTime().toLocalDate().getYear()";
 		} else {
-			return "Value::stringValue";
+			return "($T)::stringValue";
 		}
 	}
 
@@ -495,7 +512,8 @@ public class GenerateJavaFromVoID {
 			Map.entry(XSD.GYEARMONTH, YearMonth.class), Map.entry(XSD.LONG, Long.class),
 			Map.entry(XSD.NEGATIVE_INTEGER, Integer.class), Map.entry(XSD.NON_NEGATIVE_INTEGER, Integer.class),
 			Map.entry(XSD.NON_POSITIVE_INTEGER, Integer.class), Map.entry(XSD.POSITIVE_INTEGER, Integer.class),
-			Map.entry(XSD.SHORT, Short.class), Map.entry(RDF.LANGSTRING.getIri(), String.class));
+			Map.entry(XSD.SHORT, Short.class), Map.entry(RDF.LANGSTRING.getIri(), String.class),
+			Map.entry(RDF.HTML.getIri(), String.class));
 
 	private Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph(File outputDirectory, String name, String packageName,
 			SailRepositoryConnection conn, IRI graphName) throws IOException {
@@ -591,8 +609,7 @@ public class GenerateJavaFromVoID {
 				graphC.addField(qf);
 				CodeBlock.Builder cbb = CodeBlock.builder();
 				cbb.addStatement("$T tq = conn.prepareTupleQuery($L)", TupleQuery.class, qf.name());
-				cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type,
-						IRI.class);
+				cbb.addStatement("return resultToStream(tq.evaluate(), (v) -> new $T(($T) v, conn))", type, IRI.class);
 
 				mb.addCode(cbb.build());
 				graphC.addMethod(mb.build());
