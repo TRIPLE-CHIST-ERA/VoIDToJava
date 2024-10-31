@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 
 import javax.lang.model.element.Modifier;
 
+import org.apache.commons.text.CaseUtils;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -446,7 +447,7 @@ public class GenerateJavaFromVoID {
 					String predicateString = predicateIri.stringValue();
 
 					IRI otherClassString = (IRI) otherClass.getValue();
-					String methodName = coreMethodName(otherClassString, predicateIri);
+					String methodName = CaseUtils.toCamelCase(coreMethodName(otherClassString, predicateIri), false, '_');
 					MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(fixJavaKeywords(methodName));
 					methodBuilder.addModifiers(Modifier.PUBLIC);
 					TypeSpec.Builder v = classBuilders.get(otherClassPartition.getValue());
@@ -504,7 +505,7 @@ public class GenerateJavaFromVoID {
 
 					assert cb != null : "ClassBuilder not found for " + classToAddTo.getValue().stringValue();
 					IRI predicateIri = (IRI) predicate.getValue();
-					String methodName = coreMethodName(datatypeB, predicateIri);
+					String methodName = CaseUtils.toCamelCase(coreMethodName(datatypeB, predicateIri), false, '_');
 //					FieldSpec fieldBuilder = FieldSpec.builder(IRI.class, methodName+"_field", Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
 //							.initializer("$T.getInstance().createIRI($S)", SimpleValueFactory.class, predicateString).build();
 //					cb.addField(fieldBuilder);
@@ -635,7 +636,7 @@ public class GenerateJavaFromVoID {
 				Binding cIri = binding.getBinding("class");
 				String className = cIri.getValue().stringValue();
 
-				className = fixJavaKeywords(extract(className));
+				className = CaseUtils.toCamelCase(fixJavaKeywords(extract(className)),true, '_');
 
 				TypeSpec.Builder classBuilder = TypeSpec.recordBuilder(className).addModifiers(Modifier.PUBLIC);
 				classBuilder.recordConstructor(MethodSpec.constructorBuilder().addParameter(IRI.class, "id")
@@ -661,7 +662,7 @@ public class GenerateJavaFromVoID {
 			}).findAny();
 			if (any.isPresent()) {
 				Namespace ns = any.get();
-				return ns.getPrefix() + path.substring(ns.getName().length()).replace('.', '_');
+				return ns.getPrefix()+'_' + path.substring(ns.getName().length()).replace('.', '_');
 			} else {
 				// If there is no namespace, return the last part to have higher chance of
 				// having a good class name.
@@ -699,8 +700,7 @@ public class GenerateJavaFromVoID {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Binding cIri = bs.getBinding("class");
-				String className = fixJavaKeywords(extract(cIri.getValue().stringValue()));
-
+				String className = CaseUtils.toCamelCase(fixJavaKeywords(extract(cIri.getValue().stringValue())) ,true, '_');
 				ClassName type = ClassName.get("", className);
 				ParameterizedTypeName returnType = ParameterizedTypeName.get(ClassName.get(Stream.class), type);
 				MethodSpec.Builder mb = MethodSpec.methodBuilder("all" + className).returns(returnType)
