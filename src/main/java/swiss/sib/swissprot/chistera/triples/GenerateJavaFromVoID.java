@@ -173,6 +173,10 @@ public class GenerateJavaFromVoID {
 			      <groupId>org.eclipse.rdf4j</groupId>
 			      <artifactId>rdf4j-repository-sail</artifactId>
 			    </dependency>
+			    <dependency>
+			      <groupId>org.eclipse.rdf4j</groupId>
+			      <artifactId>rdf4j-repository-sparql</artifactId>
+			    </dependency>
 			  </dependencies>
 			  <build>
 			    <plugins>
