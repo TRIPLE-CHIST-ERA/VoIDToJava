@@ -291,15 +291,15 @@ public class GenerateJavaFromVoID {
 	 */
 	public void convert(File inputVoid, File outputDirectory)
 			throws RDFParseException, RepositoryException, IOException {
-		SailRepository ms = new SailRepository(new MemoryStore());
-		ms.init();
-		try (SailRepositoryConnection conn = ms.getConnection()) {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
 			conn.begin();
 			conn.add(inputVoid, Rio.getParserFormatForFileName(inputVoid.getName()).orElse(RDFFormat.TURTLE));
 			conn.commit();
 
 		}
-		try (SailRepositoryConnection conn = ms.getConnection()) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
 			RepositoryResult<Namespace> namespaces = conn.getNamespaces();
 
 			try (Stream<Namespace> s = namespaces.stream()) {
@@ -310,9 +310,9 @@ public class GenerateJavaFromVoID {
 		File sourceDir = new File(outputDirectory, "src/main/java/");
 		sourceDir.mkdirs();
 		makeUtils(sourceDir);
-		makePackages(ms, sourceDir);
+		makePackages(repository, sourceDir);
 		makePom(outputDirectory);
-		ms.shutDown();
+		repository.shutDown();
 	}
 
 	/**
@@ -368,7 +368,6 @@ public class GenerateJavaFromVoID {
 	 * We need one small utility class, just generate it so that we don't have yet
 	 * another dependency to publish
 	 * 
-	 * @param ms
 	 * @param outputDirectory
 	 * @throws IOException
 	 */
@@ -423,12 +422,12 @@ public class GenerateJavaFromVoID {
 	 * This class will be the root of the graph and will have methods to get all the
 	 * other classes and is the entry point for your code.
 	 * 
-	 * @param ms              to extract the VoID data from
+	 * @param repository              to extract the VoID data from
 	 * @param outputDirectory where to write the java code to
 	 * @throws IOException if we can't write the java files
 	 */
-	private void makePackages(SailRepository ms, File outputDirectory) throws IOException {
-		try (SailRepositoryConnection conn = ms.getConnection()) {
+	private void makePackages(SailRepository repository, File outputDirectory) throws IOException {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
 			TupleQuery tupleQuery = conn.prepareTupleQuery(FIND_ALL_NAMED_GRAPHS);
 			try (var res = tupleQuery.evaluate()) {
 				while (res.hasNext()) {
@@ -464,10 +463,10 @@ public class GenerateJavaFromVoID {
 	 */
 	private void buildMethodsOnTypesInAGraph(SailRepositoryConnection conn, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
-		buildClassEquals(conn, graphName, classBuilders);
-		buildClassHashCode(conn, graphName, classBuilders);
 		buildMethodsReturningObjects(conn, graphName, classBuilders);
 		buildMethodsReturningLiterals(conn, graphName, classBuilders);
+		buildClassEquals(conn, graphName, classBuilders);
+		buildClassHashCode(conn, graphName, classBuilders);
 	}
 
 	/**
