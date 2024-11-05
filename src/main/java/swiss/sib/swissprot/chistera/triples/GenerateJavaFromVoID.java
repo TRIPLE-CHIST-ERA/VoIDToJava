@@ -797,7 +797,7 @@ public class GenerateJavaFromVoID {
 				String className = cIri.getValue().stringValue();
 
 				// We need to fix the class name to be a valid java class name
-				className = CaseUtils.toCamelCase(fixJavaKeywords(extract(className)), true, '_');
+				className = CaseUtils.toCamelCase(fixJavaKeywords(classNameMaker(className)), true, '_');
 
 				// Generate a java record for the class
 				TypeSpec.Builder classBuilder = TypeSpec.recordBuilder(className).addModifiers(Modifier.PUBLIC);
@@ -829,7 +829,7 @@ public class GenerateJavaFromVoID {
 	 * @return a valid java method name that is close to the original iri, hopefully
 	 *         using a namespace prefix
 	 */
-	String extract(String path) {
+	String classNameMaker(String path) {
 		try (Stream<Namespace> stream = ns.values().stream()) {
 			Optional<Namespace> any = stream.filter(ns -> {
 				return path.startsWith(ns.getName());
@@ -912,7 +912,7 @@ public class GenerateJavaFromVoID {
 	private void buildFindAllInstancesOfAClass(TypeSpec.Builder graphC, IRI graphName, String cIri) {
 		// We need to fix the class name to be a valid java class name, but for now we
 		// want it snakecase for the constant field.
-		String rawClassName = fixJavaKeywords(extract(cIri));
+		String rawClassName = fixJavaKeywords(classNameMaker(cIri));
 		// But in camelCase for the Type/Class names
 		String className = CaseUtils.toCamelCase(rawClassName, true, '_');
 		ClassName type = ClassName.get("", className);
@@ -953,7 +953,7 @@ public class GenerateJavaFromVoID {
 	private void buildFindAllInstancesOfAClassByString(TypeSpec.Builder graphC, IRI graphName, IRI iri, String cIri, RepositoryConnection conn) {
 		// We need to fix the class name to be a valid java class name, but for now we
 		// want it snakecase for the constant field.
-		String rawClassName = fixJavaKeywords(extract(cIri));
+		String rawClassName = fixJavaKeywords(classNameMaker(cIri));
 		// But in camelCase for the Type/Class names
 		String className = CaseUtils.toCamelCase(rawClassName, true, '_');
 		ClassName type = ClassName.get("", className);
