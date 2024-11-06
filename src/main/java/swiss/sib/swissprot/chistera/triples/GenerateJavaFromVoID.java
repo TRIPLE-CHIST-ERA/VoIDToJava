@@ -106,6 +106,16 @@ import com.palantir.javapoet.TypeVariableName;
 
 public class GenerateJavaFromVoID {
 
+	private static final String POM_TEMPLATE;
+	static {
+		String pomTemplate = null;
+		try (InputStream is = GenerateJavaFromVoID.class.getResourceAsStream("/pom_template.xml")) {
+			pomTemplate = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+		} catch (IOException ex) {
+			ex.printStackTrace();
+		}
+		POM_TEMPLATE = pomTemplate;
+	}
 	private static final String UTIL_CLASSNAME = "Sparql";
 
 	private static final String UTIL_PACKAGE = "swiss.sib.swissprot.chistera.triples.sparql";
@@ -250,13 +260,11 @@ public class GenerateJavaFromVoID {
 	void makePom(File outputDirectory) throws IOException {
 		// TODO: find reasonable values to put in here from the VoID/Service description
 		// file.
-		try (InputStream is = this.getClass().getResourceAsStream("/pom_template.xml")) {
-			String pomTemplate = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-			String pom = pomTemplate.replace("${groupId}", "org.example").replace("${artifactId}", "example")
-					.replace("${version}", "1.0.0-SNAPSHOT");
-			Files.writeString(new File(outputDirectory, "pom.xml").toPath(), pom, StandardOpenOption.CREATE,
-					StandardOpenOption.TRUNCATE_EXISTING);
-		}
+		
+		String pom = POM_TEMPLATE.replace("${groupId}", "org.example").replace("${artifactId}", "example")
+				.replace("${version}", "1.0.0-SNAPSHOT");
+		Files.writeString(new File(outputDirectory, "pom.xml").toPath(), pom, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING);
 	}
 
 	/**
