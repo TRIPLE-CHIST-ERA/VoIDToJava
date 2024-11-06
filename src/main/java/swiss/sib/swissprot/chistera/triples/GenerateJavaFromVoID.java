@@ -100,134 +100,23 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.TypeVariableName;
+import java.nio.charset.StandardCharsets;
 
 public class GenerateJavaFromVoID {
 
-	// TODO: move to an external file and read it in.
-	private static final String POM_TEMPLATE = """
-			<?xml version="1.0" encoding="UTF-8"?>
-			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-			  <modelVersion>4.0.0</modelVersion>
-			  <groupId>${groupId}</groupId>
-			  <artifactId>${artifactId}</artifactId>
-			  <version>${version}</version>
-			  <properties>
-			    <rdf4j.version>5.0.2</rdf4j.version>
-			    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-			  </properties>
-			  <dependencyManagement>
-			    <dependencies>
-			      <dependency>
-			        <groupId>org.eclipse.rdf4j</groupId>
-			        <artifactId>rdf4j-bom</artifactId>
-			        <version>${rdf4j.version}</version>
-			        <type>pom</type>
-			        <scope>import</scope>
-			      </dependency>
-			    </dependencies>
-			  </dependencyManagement>
-			  <dependencies>
-			    <dependency>
-			      <groupId>org.slf4j</groupId>
-			      <artifactId>slf4j-api</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-sail-base</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-sail-memory</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-rio-api</artifactId>
-			      <exclusions>
-			        <exclusion>
-			          <groupId>org.apache.httpcomponents</groupId>
-			          <artifactId>httpclient-osgi</artifactId>
-			        </exclusion>
-			        <exclusion>
-			          <groupId>org.apache.httpcomponents</groupId>
-			          <artifactId>httpcore-osgi</artifactId>
-			        </exclusion>
-			      </exclusions>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-rio-rdfxml</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-queryresultio-sparqljson</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-queryresultio-sparqlxml</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-rio-turtle</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-repository-sail</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-repository-sparql</artifactId>
-			    </dependency>
-			  </dependencies>
-			  <build>
-			    <plugins>
-			     <plugin>
-			        <groupId>org.apache.maven.plugins</groupId>
-			        <artifactId>maven-compiler-plugin</artifactId>
-			        <version>3.8.0</version>
-			        <configuration>
-			          <release>21</release>
-			          <debug>true</debug>
-			          <debuglevel>lines,vars,source</debuglevel>
-			        </configuration>
-			      </plugin>
-			      <plugin>
-			        <groupId>org.apache.maven.plugins</groupId>
-			        <artifactId>maven-surefire-plugin</artifactId>
-			        <version>3.0.0</version>
-			        <configuration>
-			          <testFailureIgnore>false</testFailureIgnore>
-			        </configuration>
-			      </plugin>
-			      <plugin>
-			        <groupId>org.apache.maven.plugins</groupId>
-			        <artifactId>maven-site-plugin</artifactId>
-			        <version>3.7.1</version>
-			      </plugin>
-			      <plugin>
-					<groupId>org.springframework.boot</groupId>
-					<artifactId>spring-boot-maven-plugin</artifactId>
-				  </plugin>
-			    </plugins>
-			  </build>
-			  <reporting>
-			    <plugins>
-			      <plugin>
-			        <groupId>org.codehaus.mojo</groupId>
-			        <artifactId>versions-maven-plugin</artifactId>
-			        <version>2.8.1</version>
-			        <reportSets>
-			          <reportSet>
-			            <reports>
-			              <report>dependency-updates-report</report>
-			              <report>plugin-updates-report</report>
-			              <report>property-updates-report</report>
-			            </reports>
-			          </reportSet>
-			        </reportSets>
-			      </plugin>
-			    </plugins>
-			  </reporting>
-			</project>""";
+	private static final String POM_TEMPLATE;
+        static {
+            String pom_template;
+            try {
+                pom_template = new String(GenerateJavaFromVoID.class.getClassLoader()
+                        .getResourceAsStream("pom.xmlt").readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                pom_template = null;
+            }
+            POM_TEMPLATE = pom_template;
+        }
+        
 	private static final String UTIL_CLASSNAME = "Sparql";
 
 	private static final String UTIL_PACKAGE = "swiss.sib.swissprot.chistera.triples.sparql";
