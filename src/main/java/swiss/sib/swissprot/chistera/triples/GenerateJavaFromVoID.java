@@ -2,8 +2,10 @@ package swiss.sib.swissprot.chistera.triples;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
@@ -103,131 +105,6 @@ import com.palantir.javapoet.TypeVariableName;
 
 public class GenerateJavaFromVoID {
 
-	// TODO: move to an external file and read it in.
-	private static final String POM_TEMPLATE = """
-			<?xml version="1.0" encoding="UTF-8"?>
-			<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-			  <modelVersion>4.0.0</modelVersion>
-			  <groupId>${groupId}</groupId>
-			  <artifactId>${artifactId}</artifactId>
-			  <version>${version}</version>
-			  <properties>
-			    <rdf4j.version>5.0.2</rdf4j.version>
-			    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-			  </properties>
-			  <dependencyManagement>
-			    <dependencies>
-			      <dependency>
-			        <groupId>org.eclipse.rdf4j</groupId>
-			        <artifactId>rdf4j-bom</artifactId>
-			        <version>${rdf4j.version}</version>
-			        <type>pom</type>
-			        <scope>import</scope>
-			      </dependency>
-			    </dependencies>
-			  </dependencyManagement>
-			  <dependencies>
-			    <dependency>
-			      <groupId>org.slf4j</groupId>
-			      <artifactId>slf4j-api</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-sail-base</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-sail-memory</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-rio-api</artifactId>
-			      <exclusions>
-			        <exclusion>
-			          <groupId>org.apache.httpcomponents</groupId>
-			          <artifactId>httpclient-osgi</artifactId>
-			        </exclusion>
-			        <exclusion>
-			          <groupId>org.apache.httpcomponents</groupId>
-			          <artifactId>httpcore-osgi</artifactId>
-			        </exclusion>
-			      </exclusions>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-rio-rdfxml</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-queryresultio-sparqljson</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-queryresultio-sparqlxml</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-rio-turtle</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-repository-sail</artifactId>
-			    </dependency>
-			    <dependency>
-			      <groupId>org.eclipse.rdf4j</groupId>
-			      <artifactId>rdf4j-repository-sparql</artifactId>
-			    </dependency>
-			  </dependencies>
-			  <build>
-			    <plugins>
-			     <plugin>
-			        <groupId>org.apache.maven.plugins</groupId>
-			        <artifactId>maven-compiler-plugin</artifactId>
-			        <version>3.8.0</version>
-			        <configuration>
-			          <release>21</release>
-			          <debug>true</debug>
-			          <debuglevel>lines,vars,source</debuglevel>
-			        </configuration>
-			      </plugin>
-			      <plugin>
-			        <groupId>org.apache.maven.plugins</groupId>
-			        <artifactId>maven-surefire-plugin</artifactId>
-			        <version>3.0.0</version>
-			        <configuration>
-			          <testFailureIgnore>false</testFailureIgnore>
-			        </configuration>
-			      </plugin>
-			      <plugin>
-			        <groupId>org.apache.maven.plugins</groupId>
-			        <artifactId>maven-site-plugin</artifactId>
-			        <version>3.7.1</version>
-			      </plugin>
-			      <plugin>
-					<groupId>org.springframework.boot</groupId>
-					<artifactId>spring-boot-maven-plugin</artifactId>
-				  </plugin>
-			    </plugins>
-			  </build>
-			  <reporting>
-			    <plugins>
-			      <plugin>
-			        <groupId>org.codehaus.mojo</groupId>
-			        <artifactId>versions-maven-plugin</artifactId>
-			        <version>2.8.1</version>
-			        <reportSets>
-			          <reportSet>
-			            <reports>
-			              <report>dependency-updates-report</report>
-			              <report>plugin-updates-report</report>
-			              <report>property-updates-report</report>
-			            </reports>
-			          </reportSet>
-			        </reportSets>
-			      </plugin>
-			    </plugins>
-			  </reporting>
-			</project>""";
 	private static final String UTIL_CLASSNAME = "Sparql";
 
 	private static final String UTIL_PACKAGE = "swiss.sib.swissprot.chistera.triples.sparql";
@@ -242,6 +119,21 @@ public class GenerateJavaFromVoID {
 			PREFIX void: <http://rdfs.org/ns/void#>
 			PREFIX void_ext: <http://ldf.fi/void-ext#>
 			PREFIX sd:<http://www.w3.org/ns/sparql-service-description#>
+			""";
+	private static final String FIND_METHODS_FOR_CLASSES = PREFIXES + """
+			SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
+			WHERE {
+			  ?graph sd:graph/void:classPartition ?classPartition .
+			  ?classPartition void:class ?classType .
+			  ?classPartition void:propertyPartition ?predicatePartition .
+			  ?predicatePartition void:property ?predicate .
+			  ?class2Partition void:class ?class2Type .
+			  [] a void:Linkset ;
+			  	 void:objectsTarget ?class2Partition ;
+			  	 void:linkPredicate ?predicate ;
+			  	 void:subjectsTarget ?classPartition ;
+			  	 void:subset ?graph .
+			}
 			""";
 	private static final String FIND_DATATYPE_PARTITIONS = PREFIXES + """
 			SELECT *
@@ -357,11 +249,13 @@ public class GenerateJavaFromVoID {
 	void makePom(File outputDirectory) throws IOException {
 		// TODO: find reasonable values to put in here from the VoID/Service description
 		// file.
-		String pom = POM_TEMPLATE.replace("${groupId}", "org.example").replace("${artifactId}", "example")
-				.replace("${version}", "1.0.0-SNAPSHOT");
-		Files.writeString(new File(outputDirectory, "pom.xml").toPath(), pom, StandardOpenOption.CREATE,
-				StandardOpenOption.TRUNCATE_EXISTING);
-
+		try (InputStream is = this.getClass().getResourceAsStream("/pom_template.xml")) {
+			String pomTemplate = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+			String pom = pomTemplate.replace("${groupId}", "org.example").replace("${artifactId}", "example")
+					.replace("${version}", "1.0.0-SNAPSHOT");
+			Files.writeString(new File(outputDirectory, "pom.xml").toPath(), pom, StandardOpenOption.CREATE,
+					StandardOpenOption.TRUNCATE_EXISTING);
+		}
 	}
 
 	/**
@@ -520,21 +414,7 @@ public class GenerateJavaFromVoID {
 	 */
 	void buildMethodsReturningObjects(SailRepositoryConnection connection, IRI graphName,
 			Map<IRI, TypeSpec.Builder> classBuilders) {
-		TupleQuery tq = connection.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
-				WHERE {
-				  ?graph sd:graph/void:classPartition ?classPartition .
-				  ?classPartition void:class ?classType .
-				  ?classPartition void:propertyPartition ?predicatePartition .
-				  ?predicatePartition void:property ?predicate .
-				  ?class2Partition void:class ?class2Type .
-				  [] a void:Linkset ;
-				  	 void:objectsTarget ?class2Partition ;
-				  	 void:linkPredicate ?predicate ;
-				  	 void:subjectsTarget ?classPartition ;
-				  	 void:subset ?graph .
-				}
-				""");
+		TupleQuery tq = connection.prepareTupleQuery(FIND_METHODS_FOR_CLASSES);
 		for (Entry<IRI, TypeSpec.Builder> en : classBuilders.entrySet()) {
 			tq.setBinding("graph", graphName);
 			tq.setBinding("classPartition", en.getKey());
