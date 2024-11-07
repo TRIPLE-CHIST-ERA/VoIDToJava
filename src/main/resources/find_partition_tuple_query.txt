@@ -1,0 +1,5 @@
+SELECT ?classPartition ?class
+WHERE {
+	?graph sd:graph/void:classPartition ?classPartition .
+	?classPartition void:class ?class .
+}
