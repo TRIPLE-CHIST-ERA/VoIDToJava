@@ -21,6 +21,7 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -1008,6 +1009,7 @@ public class GenerateJavaFromVoID {
 		}
 	}
 
+	private static final Pattern NUMBERS = Pattern.compile("^\\d");
 	/**
 	 * Try to generate a reasonable package name from the URI. This is not perfect!
 	 * 
@@ -1019,7 +1021,12 @@ public class GenerateJavaFromVoID {
 		if (uri.getHost() != null) {
 			List<String> hostPartsAsList = Arrays.asList(uri.getHost().split("\\."));
 			for (int i = hostPartsAsList.size() - 1; i >= 0; i--) {
-				packageName.append(fixJavaKeywords(hostPartsAsList.get(i)).replace('.', '_'));
+				String noJavaKeyword = fixJavaKeywords(hostPartsAsList.get(i)).replace('.', '_');
+				if (NUMBERS.matcher(noJavaKeyword).find()) {
+					packageName.append("_" + noJavaKeyword);
+				} else {
+					packageName.append(noJavaKeyword);
+				}
 				if (i > 0) {
 					packageName.append('.');
 				}
@@ -1031,7 +1038,12 @@ public class GenerateJavaFromVoID {
 				packageName.append(".");
 			}
 			for (int i = 1; i < partsDirsAsList.size(); i++) {
-				packageName.append(fixJavaKeywords(partsDirsAsList.get(i)).replace('.', '_'));
+				String noJavaKeyword = fixJavaKeywords(partsDirsAsList.get(i)).replace('.', '_');
+				if (NUMBERS.matcher(noJavaKeyword).find()) {
+					packageName.append("_" + noJavaKeyword);
+				} else {
+					packageName.append(noJavaKeyword);
+				}
 				if (i < partsDirsAsList.size() - 1) {
 					packageName.append('.');
 				}

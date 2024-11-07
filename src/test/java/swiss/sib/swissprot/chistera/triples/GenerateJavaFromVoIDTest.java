@@ -31,9 +31,14 @@ public class GenerateJavaFromVoIDTest {
 
 	@Test
 	public void testPackageNames() {
-		String s = new GenerateJavaFromVoID().getPackageName(URI.create("https://sparql.uniprot.org/uniprot"))
+		GenerateJavaFromVoID g = new GenerateJavaFromVoID();
+		String s = g.getPackageName(URI.create("https://sparql.uniprot.org/uniprot"))
 				.toString();
 		assertEquals("org.uniprot.sparql.uniprot", s);
-
+		
+		String s2 = g.getPackageName(URI.create("http://www.w3.org/2002/07/owl#"))
+				.toString();
+		
+		assertEquals("org.w3.www._2002._07.owl", s2);
 	}
 }
