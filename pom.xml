@@ -9,7 +9,15 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <picocli.version>4.7.6</picocli.version>
     <junit.version>5.11.0</junit.version>
+    <maven.compiler.release>21</maven.compiler.release>
   </properties>
+  
+  <licenses>
+  	<license>
+  		<name>MIT</name>
+		<url>https://github.com/TRIPLE-CHIST-ERA/VoIDToJava/?tab=MIT-1-ov-file#readme</url>
+  	</license>
+  </licenses>
   <dependencyManagement>
     <dependencies>
       <dependency>
