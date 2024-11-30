@@ -1,0 +1,13 @@
+SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
+WHERE {
+  ?graph sd:graph/void:classPartition ?classPartition .
+  ?classPartition void:class ?classType .
+  ?classPartition void:propertyPartition ?predicatePartition .
+  ?predicatePartition void:property ?predicate .
+  ?class2Partition void:class ?class2Type .
+  [] a void:Linkset ;
+  	 void:objectsTarget ?class2Partition ;
+  	 void:linkPredicate ?predicate ;
+  	 void:subjectsTarget ?classPartition ;
+  	 void:subset ?graph .
+}
