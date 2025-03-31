@@ -1,0 +1,9 @@
+SELECT *
+WHERE {
+  ?graph sd:graph/void:classPartition ?classPartition .
+  ?classPartition void:class ?classType .
+  ?classPartition void:propertyPartition ?predicatePartition .
+  ?predicatePartition void:property ?predicate .
+  ?predicatePartition void_ext:datatypePartition ?datatypePartition .
+  ?datatypePartition void_ext:datatype ?datatype .
+}

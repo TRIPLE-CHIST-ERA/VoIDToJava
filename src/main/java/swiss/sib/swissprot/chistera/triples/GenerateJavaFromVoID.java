@@ -2,10 +2,8 @@ package swiss.sib.swissprot.chistera.triples;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
@@ -103,68 +101,19 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.TypeVariableName;
+import static swiss.sib.swissprot.chistera.triples.VoIDTemplates.FIND_ALL_NAMED_GRAPHS;
+import static swiss.sib.swissprot.chistera.triples.VoIDTemplates.FIND_DATATYPE_PARTITIONS;
+import static swiss.sib.swissprot.chistera.triples.VoIDTemplates.FIND_METHODS_FOR_CLASSES;
+import static swiss.sib.swissprot.chistera.triples.VoIDTemplates.POM_TEMPLATE;
+import static swiss.sib.swissprot.chistera.triples.VoIDTemplates.PREFIXES;
+import static swiss.sib.swissprot.chistera.triples.VoIDTemplates.FIND_PARTITION_TUPLE_QUERY;
 
 public class GenerateJavaFromVoID {
 
-	private static final String POM_TEMPLATE;
-	static {
-		String pomTemplate = null;
-		try (InputStream is = GenerateJavaFromVoID.class.getResourceAsStream("/pom_template.xml")) {
-			pomTemplate = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-		} catch (IOException ex) {
-			ex.printStackTrace();
-		}
-		POM_TEMPLATE = pomTemplate;
-	}
 	private static final String UTIL_CLASSNAME = "Sparql";
 
 	private static final String UTIL_PACKAGE = "swiss.sib.swissprot.chistera.triples.sparql";
 
-	private static final String PREFIXES = """
-			PREFIX dcterms: <http://purl.org/dc/terms/>
-			PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-			PREFIX owl: <http://www.w3.org/2002/07/owl#>
-			PREFIX pav: <http://purl.org/pav/>
-			PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-			PREFIX void: <http://rdfs.org/ns/void#>
-			PREFIX void_ext: <http://ldf.fi/void-ext#>
-			PREFIX sd:<http://www.w3.org/ns/sparql-service-description#>
-			""";
-	private static final String FIND_METHODS_FOR_CLASSES = PREFIXES + """
-			SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
-			WHERE {
-			  ?graph sd:graph/void:classPartition ?classPartition .
-			  ?classPartition void:class ?classType .
-			  ?classPartition void:propertyPartition ?predicatePartition .
-			  ?predicatePartition void:property ?predicate .
-			  ?class2Partition void:class ?class2Type .
-			  [] a void:Linkset ;
-			  	 void:objectsTarget ?class2Partition ;
-			  	 void:linkPredicate ?predicate ;
-			  	 void:subjectsTarget ?classPartition ;
-			  	 void:subset ?graph .
-			}
-			""";
-	private static final String FIND_DATATYPE_PARTITIONS = PREFIXES + """
-			SELECT *
-			WHERE {
-			  ?graph sd:graph/void:classPartition ?classPartition .
-			  ?classPartition void:class ?classType .
-			  ?classPartition void:propertyPartition ?predicatePartition .
-			  ?predicatePartition void:property ?predicate .
-			  ?predicatePartition void_ext:datatypePartition ?datatypePartition .
-			  ?datatypePartition void_ext:datatype ?datatype .
-			}
-			""";
-
-	private static final String FIND_ALL_NAMED_GRAPHS = PREFIXES + """
-			SELECT ?namedGraph
-			WHERE {
-				?dataset a sd:Dataset ;
-			               sd:namedGraph ?namedGraph .
-			}
-			""";
 	Map<String, Namespace> ns = new HashMap<>();
 
 	// TODO replace this with a nice picocli command
@@ -676,13 +625,7 @@ public class GenerateJavaFromVoID {
 	 */
 	private Map<IRI, TypeSpec.Builder> buildTypeClasssesForAGraph(SailRepositoryConnection connection, IRI graphName) {
 		Map<IRI, TypeSpec.Builder> classBuilders = new HashMap<>();
-		TupleQuery tq = connection.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartition ?class
-				WHERE {
-					?graph sd:graph/void:classPartition ?classPartition .
-					?classPartition void:class ?class .
-				}
-				""");
+		TupleQuery tq = connection.prepareTupleQuery(FIND_PARTITION_TUPLE_QUERY);
 		tq.setBinding("graph", graphName);
 		try (TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
@@ -777,13 +720,7 @@ public class GenerateJavaFromVoID {
 
 		// For each class in the graph we will generate a method that returns a stream
 		// of all instances of that class
-		TupleQuery tq = conn.prepareTupleQuery(PREFIXES + """
-				SELECT ?classPartition ?class
-				WHERE {
-					?graph sd:graph/void:classPartition ?classPartition .
-					?classPartition void:class ?class .
-				}
-				""");
+		TupleQuery tq = conn.prepareTupleQuery(FIND_PARTITION_TUPLE_QUERY);
 		tq.setBinding("graph", graphName);
 		try (TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
