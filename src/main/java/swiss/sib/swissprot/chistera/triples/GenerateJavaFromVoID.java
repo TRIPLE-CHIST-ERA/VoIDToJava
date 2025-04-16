@@ -79,14 +79,17 @@ import org.eclipse.rdf4j.model.vocabulary.WGS84;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
@@ -131,6 +134,7 @@ public class GenerateJavaFromVoID {
 			PREFIX void_ext: <http://ldf.fi/void-ext#>
 			PREFIX sd:<http://www.w3.org/ns/sparql-service-description#>
 			""";
+
 	private static final String FIND_METHODS_FOR_CLASSES = PREFIXES + """
 			SELECT ?classPartition ?classType ?predicate ?class2Partition ?class2Type
 			WHERE {
@@ -146,6 +150,16 @@ public class GenerateJavaFromVoID {
 			  	 void:subset ?graph .
 			}
 			""";
+	
+	private static final String GET_SPARQL_ENDPOINT = PREFIXES + """
+			SELECT ?endpoint
+			WHERE {
+				?service a sd:Service.
+				?service sd:endpoint ?endpoint.
+			}
+			""";
+	
+
 	private static final String FIND_DATATYPE_PARTITIONS = PREFIXES + """
 			SELECT *
 			WHERE {
@@ -344,6 +358,92 @@ public class GenerateJavaFromVoID {
 					String packageName = getPackageName(uri).toString();
 					buildClassForAGraph(outputDirectory, name, packageName, namedGraph, conn);
 					Map<IRI, TypeSpec.Builder> typeClasses = buildTypeClasssesForAGraph(conn, namedGraph);
+					
+					IRI sparqlEndpoint = null;
+					
+					// "conn" always goes back to the VOID RDF
+					TupleQuery tupleQueryGetEndpoint = conn.prepareTupleQuery(GET_SPARQL_ENDPOINT);
+					
+					try (var endpoint = tupleQueryGetEndpoint.evaluate()) {
+						while (endpoint.hasNext()) {
+							sparqlEndpoint = (IRI) endpoint.next().getBinding("endpoint").getValue();
+						}
+					}
+						
+					if(sparqlEndpoint == null) {
+						System.out.println("WARNING: no endpoint retrieved");
+					}
+					else {
+						System.out.println("**** SPARQL ENDPOINT: " + sparqlEndpoint + " named graph " + namedGraph);
+					}
+					//first get all class partitions from VoID, then query original endpoint for their labels
+					HashMap<IRI, IRI> classNames = new HashMap<>();
+					String queryGetClasses = PREFIXES + """
+							SELECT distinct ?classPartition ?classType
+							WHERE {
+							  ?graph sd:graph ?namedGraph.
+							  ?namedGraph void:classPartition ?classPartition .
+							  ?classPartition void:class ?classType .
+							}
+							""";
+
+					TupleQuery tupleQueryGetClasses = conn.prepareTupleQuery(queryGetClasses);	
+					tupleQueryGetClasses.setBinding("graph", namedGraph);
+					
+					try (var classPartitions = tupleQueryGetClasses.evaluate()) {
+						while (classPartitions.hasNext()) {
+							//get class partition
+							//get URI
+							BindingSet clp = classPartitions.next();
+							IRI className = (IRI) clp.getBinding("classType").getValue();
+							IRI voidClassIRI = (IRI)clp.getBinding("classPartition").getValue();
+							classNames.put(className, voidClassIRI);
+						}
+					}
+					
+					//go back to original repo (the SPARQL endpoint) to get labels of classes
+					Repository origRepo = new SPARQLRepository(sparqlEndpoint.stringValue());
+					try (RepositoryConnection connectionOrig = origRepo.getConnection()) {
+						for(IRI classIRI : classNames.keySet()) {
+							String getClassLabels = PREFIXES + """
+									SELECT ?label WHERE { ?className rdfs:label ?label. }
+									""";
+							
+							TupleQuery tupleQueryGetClassLabels = connectionOrig.prepareTupleQuery(getClassLabels);
+							tupleQueryGetClassLabels.setBinding("className", classIRI);
+							
+							try (var label = tupleQueryGetClassLabels.evaluate()) {
+								while (label.hasNext()) {
+									String labelText = ((Literal)label.next().getBinding("label").getValue()).getLabel();
+									
+									// replace all whitespace
+									labelText = CaseUtils.toCamelCase(labelText, true, '_');
+									
+									// Generate a new java record for the class
+									TypeSpec.Builder classBuilder = TypeSpec.recordBuilder(labelText).addModifiers(Modifier.PUBLIC);
+									// Pass the variable identifier and a connection to the repository in which the
+									// data proxied resides.
+
+									// TODO: extract what the class represents by downloading the IRI's information
+									// and looking for rdfs:comment fields and
+									// labels.
+									classBuilder.addJavadoc("""
+											@param id of the class instance
+											@param conn connection to the backend SPARQL endpoint from which information is extracted
+											""");
+									classBuilder.recordConstructor(MethodSpec.constructorBuilder().addParameter(IRI.class, "id")
+											.addParameter(RepositoryConnection.class, "conn").build());
+
+									IRI voidClassIRI = classNames.get(classIRI);
+									typeClasses.put(voidClassIRI, classBuilder);
+									
+								}
+							} catch (RDFParseException | RepositoryException | QueryEvaluationException e) {
+								// here the error is expected for e.g. the example VoID (no endpoint attached to it)
+							}
+						} 
+					}	
+	
 					buildMethodsOnTypesInAGraph(conn, namedGraph, typeClasses);
 					for (TypeSpec.Builder b : typeClasses.values()) {
 						Builder jb = JavaFile.builder(packageName, b.build());
