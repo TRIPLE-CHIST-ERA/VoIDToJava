@@ -11,12 +11,11 @@
     <junit.version>5.13.4</junit.version>
     <maven.compiler.release>21</maven.compiler.release>
   </properties>
-  
   <licenses>
-  	<license>
-  		<name>MIT</name>
-		<url>https://github.com/TRIPLE-CHIST-ERA/VoIDToJava/?tab=MIT-1-ov-file#readme</url>
-  	</license>
+    <license>
+      <name>MIT</name>
+      <url>https://github.com/TRIPLE-CHIST-ERA/VoIDToJava/?tab=MIT-1-ov-file#readme</url>
+    </license>
   </licenses>
   <dependencyManagement>
     <dependencies>
@@ -204,11 +203,11 @@
     </plugins>
     <resources>
       <resource>
-          <directory>src/main/resources</directory>
-          <includes>
-              <include>*.xml</include>
-              <include>*.ttl</include>
-          </includes>
+        <directory>src/main/resources</directory>
+        <includes>
+          <include>*.xml</include>
+          <include>*.ttl</include>
+        </includes>
       </resource>
     </resources>
     <testResources>
